@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from ..models import Task, TaskStatus, utc_now
 
@@ -63,14 +63,33 @@ class TaskStateMachine:
         return {"resume": True, "requires_user": False, "checkpoint": checkpoint, "next_step": (task.pending_steps or [None])[0]}
 
 
+class _StoreLike(Protocol):
+    def has_idempotency_key(self, key: str) -> bool: ...
+    def record_idempotency_key(self, key: str, scope: str, task_id: str | None = None) -> None: ...
+
+
 class IdempotencyRegistry:
-    def __init__(self) -> None:
+    """Track idempotency keys with optional durable storage.
+
+    When a store is provided, the registry survives process restarts so that
+    retries after a crash do not double-execute side effects. Without a store
+    the registry falls back to in-memory tracking, which is appropriate for
+    short-lived unit tests and one-shot scripts.
+    """
+
+    def __init__(self, store: _StoreLike | None = None) -> None:
+        self._store = store
         self._committed: set[str] = set()
 
     def can_execute(self, key: str) -> bool:
+        if self._store is not None:
+            return not self._store.has_idempotency_key(key)
         return key not in self._committed
 
-    def commit(self, key: str) -> None:
-        if key in self._committed:
+    def commit(self, key: str, *, scope: str = "ephemeral", task_id: str | None = None) -> None:
+        if not self.can_execute(key):
             raise ValueError(f"idempotency key already committed: {key}")
-        self._committed.add(key)
+        if self._store is not None:
+            self._store.record_idempotency_key(key, scope, task_id)
+        else:
+            self._committed.add(key)

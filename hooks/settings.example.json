@@ -1,18 +1,59 @@
 {
   "hooks": {
-    "SessionStart": [{
-      "matcher": "startup|resume",
-      "hooks": [{
-        "type": "command",
-        "command": "agent-compass doctor"
-      }]
-    }],
-    "Stop": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "# Add a project-specific checkpoint command here"
-      }]
-    }]
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-compass doctor"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-compass decide --input \"$PROMPT\" --time-sensitive"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-compass privacy scan --input \"$TOOL_INPUT_PATH\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-compass feedback add --signal $TOOL_RESULT --label neutral --notes \"auto from hook\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-compass task checkpoint $TASK_ID final --note \"session ended\""
+          }
+        ]
+      }
+    ]
   }
 }

@@ -9,10 +9,11 @@ Agent Compass helps an agent decide when to retrieve information, when to ask a 
 ## 30-second start
 
 ```bash
-python -m pip install -e .
+python -m pip install -e '.[dev]'
 agent-compass doctor
 agent-compass decide --input "What is the latest Python version?" --time-sensitive
 agent-compass task create "Run tests and write a report"
+agent-compass serve < requests.jsonl
 ```
 
 The core runs offline and does not require an API key or a specific LLM.
@@ -33,40 +34,72 @@ feedback and privacy-reviewed memory
 
 ### Policy decisions
 
-The deterministic policy engine returns an action, reason codes, confidence, scope, and policy version. It does not execute tools. A caller may use an LLM for classification, but the final safety gates remain deterministic.
+The deterministic policy engine returns an action, reason codes, confidence, scope, and policy version. It does not execute tools. A caller may use an LLM for classification, but the final safety gates remain deterministic. The current version is `policy-v2`.
+
+| Action | When it fires |
+| --- | --- |
+| `answer_directly` | local context is sufficient |
+| `retrieve` | time-sensitive, explicit search, or context insufficient (remote gated) |
+| `ask_user` | ambiguity over the configured threshold |
+| `continue` | task in progress, no interruption |
+| `resume` | task in progress, last turn was interrupted |
+| `pause_for_approval` | external side effect, destructive action, or waiting for human |
+| `consolidate_memory` | session is ending or ended |
+| `stop` | retry budget exhausted (no silent infinite retry) |
 
 ### Resumable tasks
 
-Tasks have explicit states, checkpoints, recovery notes, and idempotency support. A process restart should resume from a recorded checkpoint instead of replaying an entire conversation or repeating an external side effect.
+Tasks, checkpoints, and idempotency keys are persisted in SQLite. A process restart should resume from the latest checkpoint instead of replaying an entire conversation or repeating an external side effect.
 
 ### Privacy boundary
 
-Four levels are available: `public`, `local_only`, `sensitive`, and `secret`. Secrets are blocked from remote transfer and from memory proposals. Sensitive text is redacted before remote use. The project never stores credentials.
+Four levels are available: `public`, `local_only`, `sensitive`, and `secret`. Secrets are blocked from remote transfer and from memory proposals. Sensitive text is redacted before remote use. The bundled detector is a baseline, not a complete DLP product.
 
 ### Memory lifecycle
 
-Memory is a proposal, not an automatic transcript dump. Candidates are scored with the versioned `activation-v1` formula, inspected for secrets, and then accepted, rejected, archived, or deleted. The default is local-only storage.
+Memory is a proposal, not an automatic transcript dump. Candidates are scored with the versioned `activation-v1` formula, inspected for secrets, and then move through `candidate → accepted → active → stale → archived/deleted`. The default is local-only storage.
 
-## CLI examples
+## CLI reference
 
-```bash
-# Inspect a request
-agent-compass decide --input "查一下最新版本" --time-sensitive
-
-# Create and inspect a resumable task
-agent-compass task create "完成项目测试"
-agent-compass task show task_...
-
-# Scan before sharing text
-agent-compass privacy scan --input notes.txt
-
-# Reproduce a memory score
-agent-compass memory score --access-count 3 --days 2 --keywords 2 --type task_lesson
+```text
+agent-compass doctor
+agent-compass serve                          # JSONL protocol on stdin
+agent-compass decide --input "..." [--time-sensitive] [--remote] [--interrupted] [--retry-count N] [--proposed-action X] [--session-state ending] [--ambiguous 0.8]
+agent-compass validate <decision|task|memory|feedback> <file.json>
+agent-compass task create <goal>
+agent-compass task show <task_id>
+agent-compass task list
+agent-compass task advance <task_id> [--target running] [--completed-step plan] [--reason ...]
+agent-compass task checkpoint <task_id> <phase> [--completed-step X] [--pending-step Y] [--note Z] [--artifact path]
+agent-compass task resume <task_id>
+agent-compass privacy scan --text "..." | --input path.txt
+agent-compass memory propose --content "..." [--type task_lesson] [--privacy local_only] [--keyword k1] [--related-task task_id]
+agent-compass memory list [--status active] [--privacy local_only] [--limit 20]
+agent-compass memory touch <memory_id>
+agent-compass memory archive <memory_id>
+agent-compass memory delete <memory_id>
+agent-compass memory prune [--below 0.15] [--stale-below 0.3] [--dry-run]
+agent-compass memory score --access-count N --days D --keywords K --type task_lesson [--importance 0.5]
+agent-compass feedback add --signal ok [--label positive] [--scope this_task] [--task-id t] [--notes "..."]
+agent-compass feedback list [--task-id t] [--limit 20]
 ```
+
+## JSONL protocol
+
+`agent-compass serve` reads one request per line and writes one response per line. Every request must include `type` and `request_id`. Supported request types:
+
+```text
+decision.request, task.create, task.show, task.list, task.advance,
+task.checkpoint, task.resume, memory.propose, memory.list, memory.touch,
+memory.archive, memory.delete, memory.prune, privacy.scan,
+feedback.record, feedback.list, idempotency.commit, doctor
+```
+
+Errors come back as `{"type": "error", "payload": {"code": "...", "message": "..."}}` so callers do not have to parse stderr.
 
 ## Claude Code and other agents
 
-The repository includes examples for SessionStart/Stop and JSONL integration. The core does not depend on Claude Code, Anthropic, OpenAI, LangChain, or a cloud database. Use the JSONL protocol or Python API from any agent runtime.
+The repository includes example hooks for SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / Stop. The core does not depend on Claude Code, Anthropic, OpenAI, LangChain, or a cloud database. Use the JSONL protocol or Python API from any agent runtime.
 
 ## Non-goals and honest limits
 
@@ -81,9 +114,10 @@ Never commit real conversations, private memory, API keys, user paths, account I
 ```bash
 python -m pip install -e '.[dev]'
 python -m pytest
+python -m pytest --cov=agent_compass --cov-report=term-missing
 ```
 
-See `docs/architecture.md`, `docs/behavior-policy.md`, and `docs/privacy-boundary.md` for design details.
+See `docs/architecture.md`, `docs/behavior-policy.md`, `docs/memory-model.md`, `docs/privacy-boundary.md`, `docs/provider-adapters.md`, and `CHANGELOG.md` for design details.
 
 ## License
 

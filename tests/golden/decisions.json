@@ -1,0 +1,45 @@
+[
+  {
+    "name": "ambiguous_goal",
+    "input": {"user_input": "do the thing", "ambiguity": 0.9},
+    "expected": {
+      "action": "ask_user",
+      "requires_user": true,
+      "policy_version": "policy-v2"
+    }
+  },
+  {
+    "name": "time_sensitive_retrieve_local",
+    "input": {"user_input": "latest version"},
+    "expected": {
+      "action": "retrieve",
+      "scope": "local",
+      "policy_version": "policy-v2"
+    }
+  },
+  {
+    "name": "destructive_proposed_action",
+    "input": {"user_input": "ship it", "proposed_action": ["publish_release_notes"]},
+    "expected": {
+      "action": "pause_for_approval",
+      "requires_user": true,
+      "policy_version": "policy-v2"
+    }
+  },
+  {
+    "name": "retry_budget_exhausted",
+    "input": {"user_input": "still failing", "retry_count": 3, "session_state": "ongoing"},
+    "expected": {
+      "action": "stop",
+      "policy_version": "policy-v2"
+    }
+  },
+  {
+    "name": "session_ending_consolidate",
+    "input": {"user_input": "wrapping up", "session_state": "ending"},
+    "expected": {
+      "action": "consolidate_memory",
+      "policy_version": "policy-v2"
+    }
+  }
+]

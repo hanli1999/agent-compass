@@ -35,6 +35,23 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class MemoryStatus(str, Enum):
+    CANDIDATE = "candidate"
+    ACCEPTED = "accepted"
+    ACTIVE = "active"
+    STALE = "stale"
+    ARCHIVED = "archived"
+    DELETED = "deleted"
+
+
+class SessionState(str, Enum):
+    NEW = "new"
+    ONGOING = "ongoing"
+    INTERRUPTED = "interrupted"
+    ENDING = "ending"
+    ENDED = "ended"
+
+
 @dataclass
 class DecisionContext:
     user_input: str
@@ -50,6 +67,19 @@ class DecisionContext:
     remote_allowed: bool = False
     task_in_progress: bool = False
     waiting_for_approval: bool = False
+    # New in 0.2.0
+    proposed_actions: list[str] = field(default_factory=list)
+    retry_count: int = 0
+    retry_budget: int | None = None
+    session_state: SessionState = SessionState.NEW
+    interrupted: bool = False
+    failure_streak: int = 0
+    last_error: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["session_state"] = self.session_state.value
+        return value
 
 
 @dataclass
@@ -59,7 +89,7 @@ class Decision:
     confidence: float = 1.0
     requires_user: bool = False
     scope: str = "local"
-    policy_version: str = "policy-v1"
+    policy_version: str = "policy-v2"
     created_at: str = field(default_factory=utc_now)
     decision_id: str = field(default_factory=lambda: f"dec_{uuid.uuid4().hex[:12]}")
 
@@ -98,11 +128,21 @@ class MemoryCandidate:
     importance: float = 0.5
     novelty: float = 0.5
     keywords: list[str] = field(default_factory=list)
+    # New in 0.2.0
     memory_id: str = field(default_factory=lambda: f"mem_{uuid.uuid4().hex[:12]}")
+    status: MemoryStatus = MemoryStatus.CANDIDATE
+    access_count: int = 0
+    last_accessed: str | None = None
+    related_task_id: str | None = None
+    formula_version: str = "activation-v1"
+    score: float | None = None
     created_at: str = field(default_factory=utc_now)
+    updated_at: str = field(default_factory=utc_now)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        value = asdict(self)
+        value["status"] = self.status.value
+        return value
 
 
 @dataclass
