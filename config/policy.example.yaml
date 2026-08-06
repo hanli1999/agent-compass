@@ -1,0 +1,15 @@
+schema_version: "1"
+policy:
+  retrieval:
+    local_first: true
+    remote_requires_explicit_or_high_confidence: true
+  clarification:
+    ask_on_ambiguous_goal: true
+    ask_on_irreversible_action: true
+    auto_decide_minor_choices: true
+  approval:
+    destructive_actions:
+      - delete
+      - publish
+      - send_external_message
+      - modify_production

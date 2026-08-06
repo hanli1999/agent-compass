@@ -1,0 +1,15 @@
+schema_version: "1"
+storage:
+  backend: sqlite
+  path: "${AGENT_COMPASS_DATA_DIR}/state.db"
+policy:
+  retrieval:
+    local_first: true
+    remote_requires_explicit_or_high_confidence: true
+  clarification:
+    ask_on_ambiguous_goal: true
+    auto_decide_minor_choices: true
+privacy:
+  default_classification: local_only
+  remote_transfer: deny
+  secrets: block

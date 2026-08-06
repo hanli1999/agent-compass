@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-compass"
+version = "0.1.0"
+description = "Local-first, provider-neutral behavior and task state layer for LLM agents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "Agent Compass contributors"}]
+keywords = ["agents", "memory", "workflow", "llm", "privacy", "task-state"]
+classifiers = ["Development Status :: 3 - Alpha", "License :: OSI Approved :: MIT License", "Programming Language :: Python :: 3", "Topic :: Software Development :: Libraries"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "hypothesis>=6.0"]
+
+[project.scripts]
+agent-compass = "agent_compass.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

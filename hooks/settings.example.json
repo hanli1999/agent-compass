@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "SessionStart": [{
+      "matcher": "startup|resume",
+      "hooks": [{
+        "type": "command",
+        "command": "agent-compass doctor"
+      }]
+    }],
+    "Stop": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "# Add a project-specific checkpoint command here"
+      }]
+    }]
+  }
+}

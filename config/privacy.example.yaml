@@ -1,0 +1,7 @@
+schema_version: "1"
+privacy:
+  default_classification: local_only
+  remote_transfer: deny
+  secrets: block
+  redact_absolute_paths: true
+  redact_usernames: true
