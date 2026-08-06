@@ -27,8 +27,21 @@ class TaskService:
     def get(self, task_id: str) -> dict | None:
         return self.store.get_task(task_id)
 
-    def list(self, limit: int = 50) -> list[dict]:
-        return self.store.list_tasks(limit=limit)
+    def list(self, limit: int = 50, include_archived: bool = False) -> list[dict]:
+        return self.store.list_tasks(limit=limit, include_archived=include_archived)
+
+    def delete(self, task_id: str, *, soft: bool = False) -> dict:
+        record = self.store.get_task(task_id)
+        if record is None:
+            raise KeyError(task_id)
+        if not soft:
+            if not self.store.delete_task(task_id):
+                raise KeyError(task_id)
+            return {"deleted": True, "task_id": task_id, "soft": False}
+        task = _hydrate(record)
+        self.machine.transition(task, TaskStatus.ARCHIVED, reason="soft_delete")
+        self.store.save_task(task)
+        return {"deleted": True, "task_id": task_id, "soft": True, "status": task.status.value}
 
     def transition(
         self,
@@ -136,3 +149,19 @@ class FeedbackService:
 
     def list(self, task_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         return self.store.list_feedback(task_id=task_id, limit=limit)
+
+    def stats(self, task_id: str | None = None) -> dict[str, Any]:
+        events = self.store.list_feedback(task_id=task_id, limit=10_000)
+        by_label: dict[str, int] = {"positive": 0, "negative": 0, "neutral": 0}
+        by_scope: dict[str, int] = {}
+        for event in events:
+            label = event.get("label", "neutral")
+            by_label[label] = by_label.get(label, 0) + 1
+            scope = event.get("scope", "this_task")
+            by_scope[scope] = by_scope.get(scope, 0) + 1
+        return {
+            "total": len(events),
+            "by_label": by_label,
+            "by_scope": by_scope,
+            "task_id": task_id,
+        }

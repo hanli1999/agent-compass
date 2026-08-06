@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0 (2026-08-06)
+
+### Added
+- **`--format json|text`** and **`--no-color`** are now global flags on every human-facing subcommand. Default output is human-readable text with optional ANSI color; `--format json` keeps the previous machine-friendly behavior. The `serve` command always emits JSONL regardless of the flag.
+- **New `text` formatter** (`agent_compass.formatters.TextFormatter`) renders decisions, tasks, memories, feedback, privacy scans, and the doctor report as multi-line text with semantic colors.
+- **Zero-dependency ANSI helper** (`agent_compass.console`) supports basic 8-color output, Windows VT detection, and respects the `NO_COLOR` / `AGENT_COMPASS_NO_COLOR` / `AGENT_COMPASS_FORCE_COLOR` env vars.
+- **`agent-compass repl`** — interactive shell powered only by the Python standard library. Commands: `decide`, `task create/show/list/advance/checkpoint/resume/delete`, `memory list/search/propose`, `privacy scan`, `feedback add/list/stats`, `doctor`, `help`, `exit`.
+- **`memory search`** — substring search across content and keywords, with optional `--type`, `--status`, `--privacy`, `--min-score`, and `--limit` filters; results are sorted by score.
+- **`task delete <id> [--soft]`** — hard delete by default; `--soft` transitions the task to a new `ARCHIVED` status that survives restart but is hidden from `task list` by default (use `--include-archived` to see it).
+- **`feedback stats [--task-id]`** — counts by label (`positive` / `negative` / `neutral`) and scope.
+- **JSONL protocol** gained `memory.search`, `task.delete`, and `feedback.stats` request types.
+
+### Changed
+- `TaskStatus` now has an `ARCHIVED` value; the state machine accepts `* → ARCHIVED` from any non-terminal state, and `ARCHIVED` is terminal.
+- `SQLiteStore.list_tasks(include_archived=False)` defaults to hiding archived tasks.
+
+### Still honest about
+- The privacy detector is a **baseline**, not a complete DLP product.
+- Agent Compass does **not** provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
+- We have not yet shipped a model-assisted adapter; `LLMAdapter` Protocol remains for downstream projects.
+- The REPL keeps no command history file yet; run the same commands in another shell for now.
+
 ## 0.2.0 (2026-08-06)
 
 ### Added

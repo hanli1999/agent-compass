@@ -33,10 +33,13 @@ _SUPPORTED: dict[str, str] = {
     "memory.archive": "memory.archive.response",
     "memory.delete": "memory.delete.response",
     "memory.prune": "memory.prune.response",
+    "memory.search": "memory.search.response",
     "privacy.scan": "privacy.scan.response",
     "feedback.record": "feedback.record.response",
     "feedback.list": "feedback.list.response",
+    "feedback.stats": "feedback.stats.response",
     "idempotency.commit": "idempotency.commit.response",
+    "task.delete": "task.delete.response",
     "doctor": "doctor.response",
 }
 
@@ -157,6 +160,29 @@ def _memory_prune(compass: Compass, payload: dict) -> dict:
     )
 
 
+def _memory_search(compass: Compass, payload: dict) -> dict:
+    from .models import MemoryStatus
+
+    status = payload.get("status")
+    status_value = MemoryStatus(status) if status else None
+    items = compass.memory.search(
+        query=payload.get("query"),
+        memory_type=payload.get("memory_type"),
+        min_score=payload.get("min_score"),
+        status=status_value,
+        privacy=payload.get("privacy"),
+        limit=int(payload.get("limit", 50)),
+    )
+    return {"memories": items}
+
+
+def _task_delete(compass: Compass, payload: dict) -> dict:
+    task_id = payload.get("task_id")
+    if not task_id:
+        raise ValueError("task.delete requires 'task_id'")
+    return compass.tasks.delete(task_id, soft=bool(payload.get("soft", False)))
+
+
 def _privacy_scan(_compass: Compass, payload: dict) -> dict:
     text = payload.get("text", "")
     if not isinstance(text, str):
@@ -187,6 +213,10 @@ def _feedback_record(compass: Compass, payload: dict) -> dict:
 
 def _feedback_list(compass: Compass, payload: dict) -> dict:
     return {"feedback": compass.feedback.list(task_id=payload.get("task_id"), limit=int(payload.get("limit", 50)))}
+
+
+def _feedback_stats(compass: Compass, payload: dict) -> dict:
+    return compass.feedback.stats(task_id=payload.get("task_id"))
 
 
 def _idempotency_commit(compass: Compass, payload: dict) -> dict:
@@ -225,10 +255,13 @@ _HANDLERS: dict[str, Callable[[Compass, dict], Any]] = {
     "memory.archive": _memory_archive,
     "memory.delete": _memory_delete,
     "memory.prune": _memory_prune,
+    "memory.search": _memory_search,
     "privacy.scan": _privacy_scan,
     "feedback.record": _feedback_record,
     "feedback.list": _feedback_list,
+    "feedback.stats": _feedback_stats,
     "idempotency.commit": _idempotency_commit,
+    "task.delete": _task_delete,
     "doctor": _doctor,
 }
 

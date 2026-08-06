@@ -7,15 +7,16 @@ from typing import Any, Protocol
 from ..models import Task, TaskStatus, utc_now
 
 _ALLOWED: dict[TaskStatus, set[TaskStatus]] = {
-    TaskStatus.CREATED: {TaskStatus.PLANNED, TaskStatus.RUNNING, TaskStatus.CANCELLED},
-    TaskStatus.PLANNED: {TaskStatus.RUNNING, TaskStatus.WAITING_FOR_USER, TaskStatus.CANCELLED},
-    TaskStatus.RUNNING: {TaskStatus.WAITING_FOR_USER, TaskStatus.WAITING_FOR_APPROVAL, TaskStatus.BLOCKED, TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED},
-    TaskStatus.WAITING_FOR_USER: {TaskStatus.RUNNING, TaskStatus.CANCELLED},
-    TaskStatus.WAITING_FOR_APPROVAL: {TaskStatus.RUNNING, TaskStatus.BLOCKED, TaskStatus.CANCELLED},
-    TaskStatus.BLOCKED: {TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED},
-    TaskStatus.COMPLETED: set(),
-    TaskStatus.FAILED: {TaskStatus.RUNNING, TaskStatus.CANCELLED},
-    TaskStatus.CANCELLED: set(),
+    TaskStatus.CREATED: {TaskStatus.PLANNED, TaskStatus.RUNNING, TaskStatus.CANCELLED, TaskStatus.ARCHIVED},
+    TaskStatus.PLANNED: {TaskStatus.RUNNING, TaskStatus.WAITING_FOR_USER, TaskStatus.CANCELLED, TaskStatus.ARCHIVED},
+    TaskStatus.RUNNING: {TaskStatus.WAITING_FOR_USER, TaskStatus.WAITING_FOR_APPROVAL, TaskStatus.BLOCKED, TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.ARCHIVED},
+    TaskStatus.WAITING_FOR_USER: {TaskStatus.RUNNING, TaskStatus.CANCELLED, TaskStatus.ARCHIVED},
+    TaskStatus.WAITING_FOR_APPROVAL: {TaskStatus.RUNNING, TaskStatus.BLOCKED, TaskStatus.CANCELLED, TaskStatus.ARCHIVED},
+    TaskStatus.BLOCKED: {TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.ARCHIVED},
+    TaskStatus.COMPLETED: {TaskStatus.ARCHIVED},
+    TaskStatus.FAILED: {TaskStatus.RUNNING, TaskStatus.CANCELLED, TaskStatus.ARCHIVED},
+    TaskStatus.CANCELLED: {TaskStatus.ARCHIVED},
+    TaskStatus.ARCHIVED: set(),
 }
 
 

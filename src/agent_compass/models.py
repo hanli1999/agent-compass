@@ -33,6 +33,7 @@ class TaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    ARCHIVED = "archived"
 
 
 class MemoryStatus(str, Enum):

@@ -14,7 +14,7 @@ SNAPSHOTS = Path(__file__).parent / "snapshots"
 
 
 def _decide_cli(payload: dict, env: dict) -> dict:
-    args = [sys.executable, "-m", "agent_compass.cli", "decide", "--input", payload["user_input"]]
+    args = [sys.executable, "-m", "agent_compass.cli", "--format", "json", "decide", "--input", payload["user_input"]]
     if payload.get("time_sensitive"):
         args.append("--time-sensitive")
     if payload.get("remote"):

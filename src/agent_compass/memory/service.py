@@ -96,6 +96,26 @@ class MemoryService:
         status_value = status.value if isinstance(status, MemoryStatus) else status
         return self.store.list_memories(status=status_value, privacy=privacy, limit=limit)
 
+    def search(
+        self,
+        *,
+        query: str | None = None,
+        memory_type: str | None = None,
+        min_score: float | None = None,
+        status: MemoryStatus | str | None = None,
+        privacy: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        status_value = status.value if isinstance(status, MemoryStatus) else status
+        return self.store.search_memories(
+            query=query,
+            memory_type=memory_type,
+            min_score=min_score,
+            status=status_value,
+            privacy=privacy,
+            limit=limit,
+        )
+
     def touch(self, memory_id: str) -> MemoryCandidate:
         """Record an access (used by retrieval callers) and recompute score."""
         memory = self.store.get_memory(memory_id)

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from . import Compass
+from .formatters import make_formatter
 from .models import DecisionContext
 from .privacy.boundary import PrivacyBoundary
 from .memory.scoring import score_memory
@@ -26,12 +27,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--config",
         help="Path to a YAML or JSON config file (overrides AGENT_COMPASS_CONFIG).",
     )
+    parser.add_argument(
+        "--format",
+        choices=["json", "text"],
+        default="text",
+        help="Output format for human-facing subcommands. Default: text.",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI color in text output (also honors the NO_COLOR env var).",
+    )
     sub = parser.add_subparsers(dest="command")
 
+    def _attach_common(p: argparse.ArgumentParser) -> None:
+        # Re-declare the global flags on every subparser so callers can put them
+        # after the subcommand (e.g. `agent-compass repl --no-color`).
+        p.add_argument("--config", help=argparse.SUPPRESS)
+        p.add_argument("--format", choices=["json", "text"], default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+        p.add_argument("--no-color", action="store_true", help=argparse.SUPPRESS)
+
     sub.add_parser("doctor")
-    sub.add_parser("serve", help="Read JSONL requests from stdin and write responses to stdout.")
+    serve = sub.add_parser("serve", help="Read JSONL requests from stdin and write responses to stdout.")
+    _attach_common(serve)
+    repl = sub.add_parser("repl", help="Start an interactive shell.")
+    _attach_common(repl)
 
     decide = sub.add_parser("decide")
+    _attach_common(decide)
     decide.add_argument("--input", required=True)
     decide.add_argument("--context-sufficient", action="store_true")
     decide.add_argument("--search", action="store_true")
@@ -48,16 +71,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     validate = sub.add_parser("validate", help="Validate a JSON document against a bundled schema.")
+    _attach_common(validate)
     validate.add_argument("schema", choices=["decision", "task", "memory", "feedback"])
     validate.add_argument("file", type=Path)
 
     task = sub.add_parser("task")
+    _attach_common(task)
     task_sub = task.add_subparsers(dest="task_command", required=True)
     create = task_sub.add_parser("create")
     create.add_argument("goal")
     show = task_sub.add_parser("show")
     show.add_argument("task_id")
-    task_sub.add_parser("list")
+    list_t = task_sub.add_parser("list")
+    list_t.add_argument("--limit", type=int, default=20)
+    list_t.add_argument("--include-archived", action="store_true")
     advance = task_sub.add_parser("advance")
     advance.add_argument("task_id")
     advance.add_argument("--target")
@@ -72,14 +99,19 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint.add_argument("--artifact", action="append", default=[])
     resume = task_sub.add_parser("resume")
     resume.add_argument("task_id")
+    delete_t = task_sub.add_parser("delete")
+    delete_t.add_argument("task_id")
+    delete_t.add_argument("--soft", action="store_true", help="Archive instead of hard delete.")
 
     privacy = sub.add_parser("privacy")
+    _attach_common(privacy)
     privacy_sub = privacy.add_subparsers(dest="privacy_command", required=True)
     scan = privacy_sub.add_parser("scan")
     scan.add_argument("--input", help="Path to a UTF-8 text file to scan.")
     scan.add_argument("--text", help="Inline text to scan instead of --input path.")
 
     memory = sub.add_parser("memory")
+    _attach_common(memory)
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
     score = memory_sub.add_parser("score")
     score.add_argument("--access-count", type=int, default=0)
@@ -97,6 +129,13 @@ def build_parser() -> argparse.ArgumentParser:
     list_mem.add_argument("--status", default=None)
     list_mem.add_argument("--privacy", default=None)
     list_mem.add_argument("--limit", type=int, default=20)
+    search = memory_sub.add_parser("search")
+    search.add_argument("--query", default=None, help="Substring matched against content and keywords.")
+    search.add_argument("--type", default=None, dest="memory_type", help="Filter by memory_type.")
+    search.add_argument("--status", default=None)
+    search.add_argument("--privacy", default=None)
+    search.add_argument("--min-score", type=float, default=None)
+    search.add_argument("--limit", type=int, default=20)
     touch = memory_sub.add_parser("touch")
     touch.add_argument("memory_id")
     archive = memory_sub.add_parser("archive")
@@ -109,6 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     prune.add_argument("--dry-run", action="store_true")
 
     feedback = sub.add_parser("feedback")
+    _attach_common(feedback)
     feedback_sub = feedback.add_subparsers(dest="feedback_command", required=True)
     add = feedback_sub.add_parser("add")
     add.add_argument("--signal", required=True)
@@ -120,6 +160,8 @@ def build_parser() -> argparse.ArgumentParser:
     flist = feedback_sub.add_parser("list")
     flist.add_argument("--task-id")
     flist.add_argument("--limit", type=int, default=20)
+    stats = feedback_sub.add_parser("stats")
+    stats.add_argument("--task-id")
 
     return parser
 
@@ -131,23 +173,27 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
 
+    color = not args.no_color
+    fmt = make_formatter(args.format, color=color)
+
     if args.command == "serve":
         return _serve()
 
+    if args.command == "repl":
+        from .repl import run_repl
+
+        return run_repl(args)
+
     if args.command == "doctor":
         c = _compass_from_args(args)
-        print(
-            json.dumps(
-                {
-                    "ok": True,
-                    "version": "0.2.0",
-                    "policy_version": "policy-v2",
-                    "data_dir": str(c.config.data_dir),
-                    "schema_version": c.store.schema_version(),
-                },
-                ensure_ascii=False,
-            )
-        )
+        payload = {
+            "ok": True,
+            "version": "0.3.0",
+            "policy_version": "policy-v2",
+            "data_dir": str(c.config.data_dir),
+            "schema_version": c.store.schema_version(),
+        }
+        print(fmt.render_doctor(payload))
         return 0
 
     if args.command == "decide":
@@ -168,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
                 session_state=SessionState(args.session_state),
             )
         )
-        print(json.dumps(d.to_dict(), ensure_ascii=False))
+        print(fmt.render_decision(d.to_dict()))
         return 0
 
     if args.command == "validate":
@@ -182,73 +228,66 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "task":
         c = _compass_from_args(args)
         if args.task_command == "create":
-            print(json.dumps(c.tasks.create(args.goal).to_dict(), ensure_ascii=False))
+            task_obj = c.tasks.create(args.goal)
+            print(fmt.render_task(task_obj.to_dict()))
             return 0
         if args.task_command == "show":
             value = c.tasks.get(args.task_id)
             if value is None:
                 print(json.dumps({"error": "task_not_found", "task_id": args.task_id}, ensure_ascii=False))
                 return 1
-            print(json.dumps(value, ensure_ascii=False))
+            print(fmt.render_task(value))
             return 0
         if args.task_command == "list":
-            print(json.dumps({"tasks": c.tasks.list()}, ensure_ascii=False))
+            tasks = c.tasks.list(limit=args.limit, include_archived=args.include_archived)
+            print(fmt.render_tasks(tasks))
             return 0
         if args.task_command == "advance":
-            print(
-                json.dumps(
-                    c.tasks.advance(
-                        args.task_id,
-                        target=args.target,
-                        completed_step=args.completed_step,
-                        reason=args.reason,
-                    ),
-                    ensure_ascii=False,
-                )
+            updated = c.tasks.advance(
+                args.task_id,
+                target=args.target,
+                completed_step=args.completed_step,
+                reason=args.reason,
             )
+            print(fmt.render_task(updated))
             return 0
         if args.task_command == "checkpoint":
-            print(
-                json.dumps(
-                    c.tasks.checkpoint(
-                        args.task_id,
-                        args.phase,
-                        completed_steps=list(args.completed_step),
-                        pending_steps=list(args.pending_step),
-                        notes=list(args.note),
-                        artifacts=list(args.artifact),
-                    ),
-                    ensure_ascii=False,
-                )
+            updated = c.tasks.checkpoint(
+                args.task_id,
+                args.phase,
+                completed_steps=list(args.completed_step),
+                pending_steps=list(args.pending_step),
+                notes=list(args.note),
+                artifacts=list(args.artifact),
             )
+            print(fmt.render_task(updated))
             return 0
         if args.task_command == "resume":
             print(json.dumps(c.tasks.resume(args.task_id), ensure_ascii=False))
+            return 0
+        if args.task_command == "delete":
+            try:
+                result = c.tasks.delete(args.task_id, soft=args.soft)
+            except KeyError:
+                print(json.dumps({"error": "task_not_found", "task_id": args.task_id}, ensure_ascii=False))
+                return 1
+            print(json.dumps(result, ensure_ascii=False))
             return 0
 
     if args.command == "privacy":
         if args.privacy_command == "scan":
             if args.text is None and not args.input:
-                print(
-                    json.dumps(
-                        {"error": "missing_text", "message": "provide --text or --input"},
-                        ensure_ascii=False,
-                    )
-                )
+                print(json.dumps({"error": "missing_text", "message": "provide --text or --input"}, ensure_ascii=False))
                 return 2
             text = args.text if args.text is not None else Path(args.input).read_text(encoding="utf-8")
             result = PrivacyBoundary().inspect(text)
-            print(
-                json.dumps(
-                    {
-                        "level": result.level.name.lower(),
-                        "matches": list(result.matches),
-                        "blocked": result.blocked,
-                        "redacted": PrivacyBoundary().redact(text) if result.matches else text,
-                    },
-                    ensure_ascii=False,
-                )
-            )
+            payload = {
+                "level": result.level.name.lower(),
+                "matches": list(result.matches),
+                "blocked": result.blocked,
+                "redacted": PrivacyBoundary().redact(text) if result.matches else text,
+            }
+            print(fmt.render_privacy(payload))
             return 2 if result.blocked else (1 if result.matches else 0)
 
     if args.command == "memory":
@@ -261,7 +300,10 @@ def main(argv: list[str] | None = None) -> int:
                 memory_type=args.type,
                 importance=args.importance,
             )
-            print(json.dumps(result.__dict__, ensure_ascii=False))
+            if args.format == "text":
+                print(fmt.render_kv("memory score", result.__dict__))
+            else:
+                print(json.dumps(result.__dict__, ensure_ascii=False))
             return 0
         if args.memory_command == "propose":
             memory = c.memory.propose(
@@ -271,28 +313,34 @@ def main(argv: list[str] | None = None) -> int:
                 keywords=list(args.keyword),
                 related_task_id=args.related_task,
             )
-            print(json.dumps(memory.to_dict(), ensure_ascii=False))
+            print(fmt.render_memory(memory.to_dict()))
             return 0
         if args.memory_command == "list":
             items = c.memory.list(status=args.status, privacy=args.privacy, limit=args.limit)
-            print(json.dumps({"memories": items}, ensure_ascii=False))
+            print(fmt.render_memories(items))
+            return 0
+        if args.memory_command == "search":
+            items = c.memory.search(
+                query=args.query,
+                memory_type=args.memory_type,
+                min_score=args.min_score,
+                status=args.status,
+                privacy=args.privacy,
+                limit=args.limit,
+            )
+            print(fmt.render_memories(items))
             return 0
         if args.memory_command == "touch":
-            print(json.dumps(c.memory.touch(args.memory_id).to_dict(), ensure_ascii=False))
+            print(fmt.render_memory(c.memory.touch(args.memory_id).to_dict()))
             return 0
         if args.memory_command == "archive":
-            print(json.dumps(c.memory.archive(args.memory_id).to_dict(), ensure_ascii=False))
+            print(fmt.render_memory(c.memory.archive(args.memory_id).to_dict()))
             return 0
         if args.memory_command == "delete":
             print(json.dumps({"deleted": c.memory.delete(args.memory_id), "memory_id": args.memory_id}, ensure_ascii=False))
             return 0
         if args.memory_command == "prune":
-            print(
-                json.dumps(
-                    c.memory.prune(below=args.below, stale_below=args.stale_below, dry_run=args.dry_run),
-                    ensure_ascii=False,
-                )
-            )
+            print(json.dumps(c.memory.prune(below=args.below, stale_below=args.stale_below, dry_run=args.dry_run), ensure_ascii=False))
             return 0
 
     if args.command == "feedback":
@@ -306,10 +354,13 @@ def main(argv: list[str] | None = None) -> int:
                 decision_id=args.decision_id,
                 notes=args.notes,
             )
-            print(json.dumps(event.to_dict(), ensure_ascii=False))
+            print(fmt.render_feedback(event.to_dict()))
             return 0
         if args.feedback_command == "list":
-            print(json.dumps({"feedback": c.feedback.list(task_id=args.task_id, limit=args.limit)}, ensure_ascii=False))
+            print(fmt.render_feedback_list(c.feedback.list(task_id=args.task_id, limit=args.limit)))
+            return 0
+        if args.feedback_command == "stats":
+            print(json.dumps(c.feedback.stats(task_id=args.task_id), ensure_ascii=False))
             return 0
 
     parser.print_help()

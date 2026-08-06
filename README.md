@@ -61,20 +61,25 @@ Memory is a proposal, not an automatic transcript dump. Candidates are scored wi
 
 ## CLI reference
 
+Global flags (work on every subcommand): `--config path`, `--format json|text` (default `text`), `--no-color`.
+
 ```text
 agent-compass doctor
 agent-compass serve                          # JSONL protocol on stdin
+agent-compass repl                           # interactive shell, type 'help'
 agent-compass decide --input "..." [--time-sensitive] [--remote] [--interrupted] [--retry-count N] [--proposed-action X] [--session-state ending] [--ambiguous 0.8]
 agent-compass validate <decision|task|memory|feedback> <file.json>
 agent-compass task create <goal>
 agent-compass task show <task_id>
-agent-compass task list
+agent-compass task list [--limit 20] [--include-archived]
 agent-compass task advance <task_id> [--target running] [--completed-step plan] [--reason ...]
 agent-compass task checkpoint <task_id> <phase> [--completed-step X] [--pending-step Y] [--note Z] [--artifact path]
 agent-compass task resume <task_id>
+agent-compass task delete <task_id> [--soft]
 agent-compass privacy scan --text "..." | --input path.txt
 agent-compass memory propose --content "..." [--type task_lesson] [--privacy local_only] [--keyword k1] [--related-task task_id]
 agent-compass memory list [--status active] [--privacy local_only] [--limit 20]
+agent-compass memory search --query "..." [--type task_lesson] [--status active] [--min-score 0.5] [--limit 20]
 agent-compass memory touch <memory_id>
 agent-compass memory archive <memory_id>
 agent-compass memory delete <memory_id>
@@ -82,6 +87,45 @@ agent-compass memory prune [--below 0.15] [--stale-below 0.3] [--dry-run]
 agent-compass memory score --access-count N --days D --keywords K --type task_lesson [--importance 0.5]
 agent-compass feedback add --signal ok [--label positive] [--scope this_task] [--task-id t] [--notes "..."]
 agent-compass feedback list [--task-id t] [--limit 20]
+agent-compass feedback stats [--task-id t]
+```
+
+### Output formats
+
+Default output is human-readable text. Example:
+
+```text
+$ agent-compass decide --input "latest version"
+decision dec_8b2c4f12a300
+  action:      retrieve
+  reasons:     time_sensitive, context_insufficient
+  confidence:  0.90
+  scope:       local
+  policy:      policy-v2
+  requires:    auto
+```
+
+Use `--format json` for the previous machine-friendly output, or `--no-color` (or `NO_COLOR=1`) to strip ANSI escapes when piping.
+
+### Interactive REPL
+
+```text
+$ agent-compass repl
+agent-compass 0.3.0 (policy policy-v2)
+type 'help' for commands, 'exit' to quit.
+> memory propose --content "always run unit tests first" --type task_lesson
+memory mem_2aeea3c2ee32
+  status:      candidate
+  privacy:     local_only
+  type:        task_lesson
+  score:       0.500
+  content:     always run unit tests first
+  accesses:    0
+> memory search --query test
+memory_id          status     privacy       score  content
+mem_2aeea3c2ee32   candidate  local_only    0.500  always run unit tests first
+> exit
+bye.
 ```
 
 ## JSONL protocol

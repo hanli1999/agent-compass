@@ -70,12 +70,50 @@ class SQLiteStore:
             row = conn.execute("SELECT payload FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         return json.loads(row["payload"]) if row else None
 
-    def list_tasks(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_tasks(self, limit: int = 50, include_archived: bool = False) -> list[dict[str, Any]]:
         with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT payload FROM tasks ORDER BY updated_at DESC LIMIT ?", (limit,)
-            ).fetchall()
+            if include_archived:
+                rows = conn.execute(
+                    "SELECT payload FROM tasks ORDER BY updated_at DESC LIMIT ?", (limit,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT payload FROM tasks WHERE json_extract(payload,'$.status') != 'archived' "
+                    "ORDER BY updated_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
         return [json.loads(r["payload"]) for r in rows]
+
+    def delete_task(self, task_id: str) -> bool:
+        with self._connection() as conn:
+            cur = conn.execute("DELETE FROM tasks WHERE task_id=?", (task_id,))
+        return cur.rowcount > 0
+
+    def search_memories(
+        self,
+        *,
+        query: str | None = None,
+        memory_type: str | None = None,
+        min_score: float | None = None,
+        status: str | None = None,
+        privacy: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        items = self.list_memories(status=status, privacy=privacy, limit=10_000)
+        if memory_type:
+            items = [m for m in items if m.get("memory_type") == memory_type]
+        if isinstance(min_score, (int, float)):
+            items = [m for m in items if (m.get("score") or 0) >= min_score]
+        if query:
+            needle = query.lower()
+            items = [
+                m
+                for m in items
+                if needle in (m.get("content", "")).lower()
+                or any(needle in k.lower() for k in (m.get("keywords") or []))
+            ]
+        items.sort(key=lambda m: (m.get("score") or 0.0), reverse=True)
+        return items[:limit]
 
     # ---------------- feedback ----------------
 

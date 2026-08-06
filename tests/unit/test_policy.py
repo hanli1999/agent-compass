@@ -28,7 +28,12 @@ def test_small_ordinary_request_can_answer_directly(tmp_path):
 
 def test_cli_doctor_and_decide(tmp_path):
     env = {"AGENT_COMPASS_DATA_DIR": str(tmp_path), "PYTHONPATH": str(__import__("pathlib").Path(__file__).parents[2] / "src")}
-    doctor = subprocess.run([sys.executable, "-m", "agent_compass.cli", "doctor"], capture_output=True, text=True, env={**__import__("os").environ, **env})
+    doctor = subprocess.run(
+        [sys.executable, "-m", "agent_compass.cli", "--format", "json", "doctor"],
+        capture_output=True,
+        text=True,
+        env={**__import__("os").environ, **env},
+    )
     assert doctor.returncode == 0
     assert json.loads(doctor.stdout)["ok"] is True
 
