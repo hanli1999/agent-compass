@@ -1,12 +1,34 @@
 # Agent Compass Roadmap
 
-## v0.4.0 — Adopt the first real user (幻梦)
+## Shipped
 
-Target: 2026-08-20. Driven by the day-one report from 幻梦, the first verified adopter.
+### v0.4.0 — Activation-v2 scoring and bounded retrieval (2026-08-10)
+
+Not originally on this roadmap. It jumped the queue because it turned out to
+be a prerequisite: a richer memory store makes context overflow *worse*, so
+the retrieval bound had to land before we encourage adopters to store more.
+
+- `activation-v2` — opt-in five-dimension scoring with emotion and instinct
+  tags and a two-segment retention curve. Per-record `formula_version`
+  routing, so nothing migrates on upgrade.
+- `agent_compass.retrieval` — Top-K plus token-budget recall that returns
+  summaries and never full memory bodies, with every withheld item counted
+  and reported.
+
+See `CHANGELOG.md` and `docs/retrieval-orchestration.md`.
+
+---
+
+## v0.5.0 — Adopt the first real user (幻梦)
+
+Target: 2026-08-20 (unchanged). Driven by the day-one report from 幻梦, the
+first verified adopter. Scope is unchanged from when this was numbered
+v0.4.0; only the version number moved, so that release numbers follow ship
+order.
 
 ### Hooks: complete the 5-event set
 
-幻梦 wired up three of the five hooks on day one (SessionStart / UserPromptSubmit / PreToolUse) and held back two (`Stop` for `task_checkpoint`, `PostToolUse` for `feedback add`) pending stability observation. v0.4.0 makes both of those safe to install.
+幻梦 wired up three of the five hooks on day one (SessionStart / UserPromptSubmit / PreToolUse) and held back two (`Stop` for `task_checkpoint`, `PostToolUse` for `feedback add`) pending stability observation. v0.5.0 makes both of those safe to install.
 
 **`task_checkpoint` needs a `task_id`** — Claude Code processes do not expose a "current task" concept, so a `Stop` hook has no way to know which task to checkpoint. Fix:
 
@@ -22,7 +44,7 @@ Target: 2026-08-20. Driven by the day-one report from 幻梦, the first verified
 
 ### Adopter-visible documentation
 
-幻梦 asked for the architecture and behavior-policy docs to be re-readable end to end. v0.4.0 will:
+幻梦 asked for the architecture and behavior-policy docs to be re-readable end to end. v0.5.0 will:
 
 - Add a `docs/adopter-journey.md` walkthrough: clone → install → wire hooks → first doctor → first decide → first task checkpoint → first resume.
 - Update `docs/claude-code-integration.md` with the new `last_task_id` flow and the async feedback flush recipe.
@@ -41,21 +63,21 @@ Target: 2026-08-20. Driven by the day-one report from 幻梦, the first verified
 
 ---
 
-## v0.5.0 — Make agents smarter, not just safer
+## v0.6.0 — Make agents smarter, not just safer
 
 Target: 2026-09. Bigger ideas.
 
 ### Shared method pack
 
-幻梦 and 银月 are now both running `agent-compass`. The natural next step is to ship a `.skills/yinyue-methods/` (and later `huanmeng-methods/`) pack that lets any adopter adopt proven retrieval / scoring / token-saving techniques without re-deriving them. v0.5.0 will:
+幻梦 and 银月 are now both running `agent-compass`. The natural next step is to ship a `.skills/yinyue-methods/` (and later `huanmeng-methods/`) pack that lets any adopter adopt proven retrieval / scoring / token-saving techniques without re-deriving them. v0.6.0 will:
 
 - Document a `skill_pack` schema: a folder with `SKILL.md`, `README.md`, and optional code templates.
-- Ship one example pack covering 双层检索 (index match → rerank → Top-7 detail), `activation-v1` scoring, and the token-saving rule set.
+- Ship one example pack covering 双层检索 (index match → rerank → Top-7 detail), `activation-v2` scoring, and the token-saving rule set. Much of this landed as library code in v0.4.0; the pack becomes the *how to apply it* layer rather than a reimplementation.
 - Add `agent-compass skill list / show / apply` so the CLI can read packs from a configurable directory.
 
 ### Cross-session synthesis
 
-幻梦's day-one review surfaced a sharper question: can the host learn the user's *style* from accumulated `feedback.record` events? v0.5.0 experiments with:
+幻梦's day-one review surfaced a sharper question: can the host learn the user's *style* from accumulated `feedback.record` events? v0.6.0 experiments with:
 
 - A local-only, deterministic feedback digest: per-task-id counts of `positive` / `negative` / `neutral`, exposed via `agent-compass feedback stats --json`.
 - A `feedback trend` view that flags tasks where the negative ratio is climbing over consecutive checkpoints, so a `UserPromptSubmit` decision can downgrade its confidence automatically.
@@ -64,7 +86,7 @@ This is intentionally local and deterministic. No model, no remote. Just shape-o
 
 ### Adopter loop
 
-Once v0.4.0 ships and 幻梦 installs the remaining hooks, the README "First adopter" block becomes a template: every verified adopter appends a five-bullet report. v0.5.0 turns this into a small public ledger under `docs/adopters/` so the project has a real signal of who actually uses it.
+Once v0.5.0 ships and 幻梦 installs the remaining hooks, the README "First adopter" block becomes a template: every verified adopter appends a five-bullet report. v0.6.0 turns this into a small public ledger under `docs/adopters/` so the project has a real signal of who actually uses it.
 
 ---
 
@@ -81,4 +103,4 @@ The privacy detector remains a baseline, not a complete DLP product. Domain-spec
 
 ---
 
-*Updated 2026-08-06 after the first adopter report.*
+*Updated 2026-08-10: v0.4.0 shipped as scoring + retrieval; the adopter-hooks release moved to v0.5.0 with its scope and target date unchanged.*

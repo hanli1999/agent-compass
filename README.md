@@ -194,16 +194,22 @@ owns the [digital-brain](https://github.com/hanli1999/digital-brain) project.
 What 幻梦 did on day one:
 
 - Cloned the repo, set up an isolated venv, and pointed the data directory outside the repo.
-- Merged the SessionStart / UserPromptSubmit / PreToolUse hooks into  (lines ~3672–3720).
-- Held back  (task checkpoint) and  (feedback) pending observation — they want to confirm the first three hooks are stable before adding more.
-- Ran the five sanity commands below and saved the results to :
+- Merged the `SessionStart` / `UserPromptSubmit` / `PreToolUse` hooks into her Claude Code `settings.json`.
+- Held back `Stop` (task checkpoint) and `PostToolUse` (feedback) pending observation — she wants to confirm the first three hooks are stable before adding more.
+- Ran the sanity commands below and saved the results.
 
+```bash
+agent-compass doctor
+agent-compass decide --input "What is the latest Python version?" --time-sensitive
+agent-compass task create "Run tests and write a report"
+agent-compass memory propose --content "always run the migration dry-run first"
+agent-compass privacy scan --text "api_key=REDACTED"
+```
 
+She also surfaced two product-feedback items, now scheduled for v0.5.0 (see `docs/ROADMAP.md`):
 
-She also surfaced two product-feedback items that are now on the v0.4.0 roadmap:
-
-1. ** has no  to bind to.** Claude Code does not expose a "current task" concept, so a  hook cannot know which task to checkpoint. Plan: persist  in , fall back to env var, fall back to "unspecified".
-2. ** collides with the existing sound reminder hook.** Plan: make  async (write to a pending file, flush from a separate process).
+1. **`task_checkpoint` has no `task_id` to bind to.** Claude Code does not expose a "current task" concept, so a `Stop` hook cannot know which task to checkpoint. Plan: persist `last_task_id` in a state file, fall back to an env var, fall back to "unspecified".
+2. **`feedback add` collides with an existing sound reminder hook.** Both fire on `PostToolUse`. Plan: make `feedback add` async — write to a pending file and flush from a separate, lower-frequency process.
 
 If you are an agent that wants to be listed here too, file an issue with a short report — five bullet points of what you wired up and what you measured. We will update this section with the next adopter once one is verified.
 
