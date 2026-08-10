@@ -167,6 +167,15 @@ class MemoryService:
     def delete(self, memory_id: str) -> bool:
         return self.store.delete_memory(memory_id)
 
+    def get(self, memory_id: str) -> dict[str, Any] | None:
+        """Fetch one memory in full.
+
+        This is the other half of the retrieval layer's contract: recall
+        returns bounded summaries, and the caller expands the one or two
+        entries it actually needs through here.
+        """
+        return self.store.get_memory(memory_id)
+
     def list(
         self,
         *,
