@@ -158,6 +158,36 @@ class CompassRepl:
             self.compass.memory.list(status=ns.status, privacy=ns.privacy, limit=ns.limit)
         )
 
+    def _memory_prune(self, tokens: list[str]) -> str:
+        parser = argparse.ArgumentParser(prog="memory prune", add_help=False)
+        parser.add_argument("--below", type=float, default=0.15)
+        parser.add_argument("--stale-below", type=float, default=0.3)
+        parser.add_argument("--dry-run", action="store_true")
+        ns = parser.parse_args(tokens)
+        import json
+
+        return json.dumps(
+            self.compass.memory.prune(below=ns.below, stale_below=ns.stale_below, dry_run=ns.dry_run),
+            ensure_ascii=False,
+        )
+
+    def _memory_consolidate(self, tokens: list[str]) -> str:
+        parser = argparse.ArgumentParser(prog="memory consolidate", add_help=False)
+        parser.add_argument("--merge-threshold", type=float, default=0.5)
+        parser.add_argument("--status", action="append", default=None)
+        parser.add_argument("--dry-run", action="store_true")
+        ns = parser.parse_args(tokens)
+        import json
+
+        return json.dumps(
+            self.compass.memory.consolidate(
+                merge_threshold=ns.merge_threshold,
+                status_filter=list(ns.status) if ns.status else None,
+                dry_run=ns.dry_run,
+            ),
+            ensure_ascii=False,
+        )
+
     def _task_create(self, tokens: list[str]) -> str:
         # Goal can be multiple words; the REPL joins all remaining tokens so
         # `task create demo repl` produces goal="demo repl".
@@ -345,12 +375,14 @@ class CompassRepl:
 
     def do_memory(self, rest: list[str]):
         if not rest:
-            return "usage: memory <list|search|propose>"
+            return "usage: memory <list|search|propose|prune|consolidate>"
         sub, *args = rest
         return {
             "list": self._memory_list,
             "search": self._memory_search,
             "propose": self._memory_propose,
+            "prune": self._memory_prune,
+            "consolidate": self._memory_consolidate,
         }.get(sub, lambda _a: f"unknown memory subcommand: {sub!r}")(args)
 
     def do_privacy(self, rest: list[str]):
