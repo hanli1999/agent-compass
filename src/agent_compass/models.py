@@ -135,6 +135,10 @@ class MemoryCandidate:
     access_count: int = 0
     last_accessed: str | None = None
     related_task_id: str | None = None
+    # New in 0.4.0 — only used by the activation-v2 formula. Left as None on
+    # v1 records, where they contribute nothing.
+    emotion_tag: str | None = None
+    instinct_tag: str | None = None
     formula_version: str = "activation-v1"
     score: float | None = None
     created_at: str = field(default_factory=utc_now)

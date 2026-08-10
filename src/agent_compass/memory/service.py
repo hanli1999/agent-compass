@@ -6,7 +6,12 @@ from typing import Any
 
 from ..models import MemoryCandidate, MemoryStatus, utc_now
 from ..privacy.boundary import PrivacyBoundary
-from .scoring import score_memory
+from .scoring import (
+    FORMULA_VERSION,
+    FORMULA_VERSION_V2,
+    SUPPORTED_FORMULA_VERSIONS,
+    route_score,
+)
 
 PRUNE_BELOW_SCORE = 0.15
 STALE_BELOW_SCORE = 0.3
@@ -69,6 +74,20 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(intersection) / len(union)
 
 
+def _rescore(memory: dict, days_elapsed: float):
+    """Rescore a stored row using the formula it was written with."""
+    return route_score(
+        access_count=memory.get("access_count", 0),
+        days_elapsed=days_elapsed,
+        keyword_hits=len(memory.get("keywords", []) or []),
+        memory_type=memory.get("memory_type", "task_lesson"),
+        importance=memory.get("importance"),
+        emotion_tag=memory.get("emotion_tag"),
+        instinct_tag=memory.get("instinct_tag"),
+        formula_version=memory.get("formula_version") or FORMULA_VERSION,
+    )
+
+
 class MemoryService:
     def __init__(self, boundary: PrivacyBoundary, store):
         self.boundary = boundary
@@ -85,6 +104,9 @@ class MemoryService:
         novelty: float = 0.5,
         source: str = "session",
         related_task_id: str | None = None,
+        emotion_tag: str | None = None,
+        instinct_tag: str | None = None,
+        formula_version: str | None = None,
     ) -> MemoryCandidate:
         inspection = self.boundary.inspect(content)
         if inspection.blocked:
@@ -92,6 +114,14 @@ class MemoryService:
                 f"secret content cannot become a memory: {', '.join(inspection.matches)}"
             )
         chosen_privacy = privacy or self._default_privacy(inspection)
+        # Tagging a memory with affect or drive only means anything under v2,
+        # so opt the record in automatically rather than silently ignoring it.
+        if formula_version is None:
+            formula_version = (
+                FORMULA_VERSION_V2 if (emotion_tag or instinct_tag) else FORMULA_VERSION
+            )
+        if formula_version not in SUPPORTED_FORMULA_VERSIONS:
+            raise ValueError(f"unsupported formula_version: {formula_version}")
         candidate = MemoryCandidate(
             content=content,
             memory_type=memory_type,
@@ -101,13 +131,19 @@ class MemoryService:
             novelty=novelty,
             source=source,
             related_task_id=related_task_id,
+            emotion_tag=emotion_tag,
+            instinct_tag=instinct_tag,
+            formula_version=formula_version,
         )
-        candidate.score = score_memory(
+        candidate.score = route_score(
             access_count=0,
             days_elapsed=0.0,
             keyword_hits=len(candidate.keywords),
             memory_type=candidate.memory_type,
             importance=candidate.importance,
+            emotion_tag=emotion_tag,
+            instinct_tag=instinct_tag,
+            formula_version=formula_version,
         ).score
         candidate.status = MemoryStatus.CANDIDATE
         self.store.save_memory(candidate.to_dict())
@@ -170,13 +206,7 @@ class MemoryService:
         memory["last_accessed"] = utc_now()
         now = datetime.now(timezone.utc)
         days = _days_between(memory.get("created_at"), now)
-        result = score_memory(
-            access_count=memory["access_count"],
-            days_elapsed=days,
-            keyword_hits=len(memory.get("keywords", [])),
-            memory_type=memory.get("memory_type", "task_lesson"),
-            importance=memory.get("importance"),
-        )
+        result = _rescore(memory, days)
         memory["score"] = result.score
         memory["updated_at"] = utc_now()
         if memory.get("status") == MemoryStatus.STALE.value and result.score >= STALE_BELOW_SCORE:
@@ -199,13 +229,7 @@ class MemoryService:
         now = datetime.now(timezone.utc)
         for memory in self.store.list_memories(limit=10_000):
             days = _days_between(memory.get("created_at"), now)
-            result = score_memory(
-                access_count=memory.get("access_count", 0),
-                days_elapsed=days,
-                keyword_hits=len(memory.get("keywords", [])),
-                memory_type=memory.get("memory_type", "task_lesson"),
-                importance=memory.get("importance"),
-            )
+            result = _rescore(memory, days)
             memory["score"] = result.score
             current = memory.get("status")
             if result.score < below:
@@ -314,13 +338,7 @@ class MemoryService:
             survivor["merged_from"] = [s["memory_id"] for s in siblings]
             now = datetime.now(timezone.utc)
             days = _days_between(survivor.get("created_at"), now)
-            result = score_memory(
-                access_count=survivor["access_count"],
-                days_elapsed=days,
-                keyword_hits=len(survivor["keywords"]),
-                memory_type=survivor.get("memory_type", "task_lesson"),
-                importance=survivor.get("importance"),
-            )
+            result = _rescore(survivor, days)
             survivor["score"] = result.score
             survivor["status"] = MemoryStatus.ACTIVE.value
             survivor["updated_at"] = utc_now()

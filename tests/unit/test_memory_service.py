@@ -67,3 +67,56 @@ def test_delete_removes_memory(tmp_path):
     memory = compass.memory.propose("throwaway note")
     assert compass.memory.delete(memory.memory_id) is True
     assert compass.memory.list() == []
+
+
+# --------------------------------------------------- activation-v2 integration
+
+def test_propose_defaults_to_v1(tmp_path):
+    compass = _compass(tmp_path)
+    memory = compass.memory.propose("plain lesson")
+    assert memory.formula_version == "activation-v1"
+    assert memory.emotion_tag is None
+    assert memory.instinct_tag is None
+
+
+def test_tagging_a_memory_opts_it_into_v2(tmp_path):
+    compass = _compass(tmp_path)
+    memory = compass.memory.propose(
+        "the release broke production",
+        memory_type="event",
+        instinct_tag="survival",
+        emotion_tag="anxious",
+    )
+    assert memory.formula_version == "activation-v2"
+    assert memory.score is not None
+
+
+def test_formula_version_can_be_forced(tmp_path):
+    compass = _compass(tmp_path)
+    memory = compass.memory.propose("untagged but v2", formula_version="activation-v2")
+    assert memory.formula_version == "activation-v2"
+
+
+def test_unsupported_formula_version_is_rejected(tmp_path):
+    compass = _compass(tmp_path)
+    with pytest.raises(ValueError):
+        compass.memory.propose("nope", formula_version="activation-v99")
+
+
+def test_tags_survive_a_storage_round_trip(tmp_path):
+    compass = _compass(tmp_path)
+    memory = compass.memory.propose("shareable trick", instinct_tag="transmit")
+    stored = compass.memory.list()[0]
+    assert stored["instinct_tag"] == "transmit"
+    assert stored["formula_version"] == "activation-v2"
+    # touch() must rescore with v2, not silently fall back to v1
+    touched = compass.memory.touch(memory.memory_id)
+    assert touched.instinct_tag == "transmit"
+    assert touched.formula_version == "activation-v2"
+
+
+def test_touch_keeps_v1_records_on_v1(tmp_path):
+    compass = _compass(tmp_path)
+    memory = compass.memory.propose("legacy lesson")
+    touched = compass.memory.touch(memory.memory_id)
+    assert touched.formula_version == "activation-v1"

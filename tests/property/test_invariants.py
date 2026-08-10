@@ -68,7 +68,8 @@ def test_score_memory_is_non_negative(access_count, days, keyword_hits, memory_t
     )
     assert result.score >= 0.0
     assert result.context <= 0.75  # bounded by scoring.py
-    assert result.importance == max(0.0, min(1.0, importance))
+    # scoring.py rounds every component to 6 decimals.
+    assert result.importance == pytest.approx(max(0.0, min(1.0, importance)), abs=1e-6)
     assert result.formula_version == FORMULA_VERSION
 
 
@@ -198,7 +199,7 @@ def _valid_path_to(target: TaskStatus) -> list[TaskStatus]:
 
 @given(
     start=st.sampled_from(list(TaskStatus)),
-    target=st.sampledfrom := st.sampled_from(list(TaskStatus)),
+    target=st.sampled_from(list(TaskStatus)),
 )
 @settings(max_examples=200)
 def test_invalid_transitions_raise(start, target):
