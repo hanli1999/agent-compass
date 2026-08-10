@@ -474,3 +474,22 @@ def test_a_broken_external_source_does_not_break_local_recall(tmp_path):
     result = compass.recall("survives")
     assert len(result) == 1
     assert "flaky" in result.errors
+
+
+def test_digest_does_not_double_up_the_ellipsis():
+    items = [RetrievedItem(memory_id="m", summary="cut here…", score=1.0, truncated=True)]
+    text = render_digest(RetrievalOrchestrator([_StubRetriever("s", items)]).retrieve("q"))
+    assert "……" not in text
+    assert "cut here…" in text
+
+
+def test_reported_version_is_single_sourced():
+    """The version was hardcoded in three files and drifted. Keep it from recurring."""
+    import tomllib
+    from pathlib import Path
+
+    import agent_compass
+
+    root = Path(agent_compass.__file__).resolve().parents[2]
+    declared = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    assert agent_compass.__version__ == declared["project"]["version"]

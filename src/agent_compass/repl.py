@@ -31,6 +31,7 @@ import argparse
 import shlex
 from typing import Any
 
+from . import __version__
 from . import Compass
 from .formatters import TextFormatter, make_formatter
 from .models import DecisionContext, SessionState
@@ -318,7 +319,7 @@ class CompassRepl:
         return self.fmt.render_doctor(
             {
                 "ok": True,
-                "version": "0.3.0",
+                "version": __version__,
                 "policy_version": "policy-v2",
                 "data_dir": str(c.config.data_dir),
                 "schema_version": c.store.schema_version(),
@@ -414,7 +415,7 @@ class CompassRepl:
 
 
 def _loop(repl: CompassRepl, stdin, stdout) -> int:
-    stdout.write(_BANNER.format(version="0.3.0", policy="policy-v2"))
+    stdout.write(_BANNER.format(version=__version__, policy="policy-v2"))
     stdout.flush()
     for line in stdin:
         line = line.rstrip("\n")

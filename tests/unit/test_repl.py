@@ -3,6 +3,7 @@ import io
 
 import pytest
 
+from agent_compass import __version__
 from agent_compass import Compass, CompassConfig
 from agent_compass.repl import CompassRepl
 
@@ -17,7 +18,7 @@ def repl(tmp_path, monkeypatch):
 def test_doctor(repl):
     out = repl.run("doctor")
     assert "agent-compass" in out
-    assert "0.3.0" in out
+    assert __version__ in out
 
 
 def test_decide(repl):

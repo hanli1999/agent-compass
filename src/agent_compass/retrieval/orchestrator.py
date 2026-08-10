@@ -150,7 +150,8 @@ def render_digest(result: RetrievalResult, *, header: str = "Relevant memories")
 
     lines = [f"{header} ({len(result.items)}):"]
     for index, item in enumerate(result.items, 1):
-        marker = "…" if item.truncated else ""
+        # summarize() already ellipsises what it cut; don't double up.
+        marker = "…" if item.truncated and not item.summary.endswith("…") else ""
         lines.append(f"{index}. [{item.memory_type}] {item.summary}{marker}")
         lines.append(f"   id={item.memory_id} score={item.score:.3f} hits={item.keyword_hits}")
 

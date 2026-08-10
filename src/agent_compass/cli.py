@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import __version__
 from . import Compass
 from .formatters import make_formatter
 from .models import DecisionContext
@@ -192,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         c = _compass_from_args(args)
         payload = {
             "ok": True,
-            "version": "0.3.0",
+            "version": __version__,
             "policy_version": "policy-v2",
             "data_dir": str(c.config.data_dir),
             "schema_version": c.store.schema_version(),
