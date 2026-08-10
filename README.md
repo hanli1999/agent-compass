@@ -57,7 +57,29 @@ Four levels are available: `public`, `local_only`, `sensitive`, and `secret`. Se
 
 ### Memory lifecycle
 
-Memory is a proposal, not an automatic transcript dump. Candidates are scored with the versioned `activation-v1` formula, inspected for secrets, and then move through `candidate → accepted → active → stale → archived/deleted`. The default is local-only storage.
+Memory is a proposal, not an automatic transcript dump. Candidates are scored with a versioned activation formula, inspected for secrets, and then move through `candidate → accepted → active → stale → archived/deleted`. The default is local-only storage.
+
+Two formulas coexist and each record remembers which one produced it, so upgrading never silently rescores existing rows. `activation-v1` is the default. `activation-v2` adds two dimensions — an affect tag and a five-class instinct tag (`survival` / `kin` / `resource` / `novelty` / `transmit`) — and a two-segment retention curve that forgets fast for a week and then plateaus. A memory opts in automatically when proposed with a tag.
+
+### Bounded retrieval
+
+Give an agent a good memory store and it will drown in it. Scoring tells you *which* memories matter; it says nothing about how many to send or how large they may be.
+
+**Retrieval never returns full memory bodies.** It returns a ranked digest under an explicit Top-K and token budget, plus the `memory_id` needed to fetch a body on demand.
+
+```python
+result = compass.recall("why did the migration fail", token_budget=800)
+
+for item in result:
+    print(item.summary)                 # bounded digest, never the whole record
+
+if result.truncated:
+    print(f"{result.dropped_for_limit + result.dropped_for_budget} more not shown")
+
+body = compass.memory.get(result.items[0].memory_id)["content"]   # on demand
+```
+
+Everything withheld is counted and reported — a digest that silently drops four matches reads exactly like a complete answer. Any source with a `name` and a `retrieve(query)` method can join the fan-out, and one that raises is recorded and skipped rather than failing the call. See `docs/retrieval-orchestration.md`.
 
 ## CLI reference
 
@@ -161,7 +183,7 @@ python -m pytest
 python -m pytest --cov=agent_compass --cov-report=term-missing
 ```
 
-See `docs/architecture.md`, `docs/behavior-policy.md`, `docs/memory-model.md`, `docs/privacy-boundary.md`, `docs/provider-adapters.md`, and `CHANGELOG.md` for design details.
+See `docs/architecture.md`, `docs/behavior-policy.md`, `docs/memory-model.md`, `docs/retrieval-orchestration.md`, `docs/privacy-boundary.md`, `docs/provider-adapters.md`, and `CHANGELOG.md` for design details.
 
 ## License
 

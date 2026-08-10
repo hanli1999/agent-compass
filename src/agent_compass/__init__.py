@@ -13,11 +13,19 @@ from .models import (
 )
 from .policy.engine import PolicyEngine
 from .privacy.boundary import PrivacyBoundary
+from .retrieval import (
+    CallableRetriever,
+    LocalMemoryRetriever,
+    RetrievalOrchestrator,
+    RetrievalQuery,
+    RetrievalResult,
+    render_digest,
+)
 from .storage.sqlite import SQLiteStore
 from .tasks.service import TaskService, FeedbackService
 from .tasks.state_machine import TaskStateMachine, Checkpoint, IdempotencyRegistry
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 
 class Compass:
@@ -30,6 +38,7 @@ class Compass:
         self.tasks = TaskService(self.store)
         self.memory = MemoryService(self.privacy, self.store)
         self.feedback = FeedbackService(self.store)
+        self.retrieval = RetrievalOrchestrator([LocalMemoryRetriever(self.store)])
         self.idempotency = IdempotencyRegistry(self.store)
 
     @classmethod
@@ -38,6 +47,15 @@ class Compass:
 
     def decide(self, context: DecisionContext) -> Decision:
         return self.policy.decide(context)
+
+    def recall(self, query: str | RetrievalQuery, **overrides) -> RetrievalResult:
+        """Bounded memory recall: ranked summaries, never full bodies.
+
+        Pass ``token_budget=`` to cap the size of what comes back. Use
+        ``compass.memory.get(...)`` with a returned ``memory_id`` to pull a
+        full body once you know you need it.
+        """
+        return self.retrieval.retrieve(query, **overrides)
 
 
 __all__ = [
@@ -58,6 +76,12 @@ __all__ = [
     "PrivacyBoundary",
     "SQLiteStore",
     "PolicyEngine",
+    "RetrievalOrchestrator",
+    "RetrievalQuery",
+    "RetrievalResult",
+    "LocalMemoryRetriever",
+    "CallableRetriever",
+    "render_digest",
     "Checkpoint",
     "IdempotencyRegistry",
     "__version__",

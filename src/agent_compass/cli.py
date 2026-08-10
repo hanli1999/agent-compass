@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import __version__
 from . import Compass
 from .formatters import make_formatter
 from .models import DecisionContext
@@ -146,6 +147,10 @@ def build_parser() -> argparse.ArgumentParser:
     prune.add_argument("--below", type=float, default=0.15)
     prune.add_argument("--stale-below", type=float, default=0.3)
     prune.add_argument("--dry-run", action="store_true")
+    consolidate = memory_sub.add_parser("consolidate")
+    consolidate.add_argument("--merge-threshold", type=float, default=0.5)
+    consolidate.add_argument("--status", action="append", default=None, help="Filter to memories in this status (repeatable).")
+    consolidate.add_argument("--dry-run", action="store_true")
 
     feedback = sub.add_parser("feedback")
     _attach_common(feedback)
@@ -188,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         c = _compass_from_args(args)
         payload = {
             "ok": True,
-            "version": "0.3.0",
+            "version": __version__,
             "policy_version": "policy-v2",
             "data_dir": str(c.config.data_dir),
             "schema_version": c.store.schema_version(),
@@ -341,6 +346,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.memory_command == "prune":
             print(json.dumps(c.memory.prune(below=args.below, stale_below=args.stale_below, dry_run=args.dry_run), ensure_ascii=False))
+            return 0
+        if args.memory_command == "consolidate":
+            summary = c.memory.consolidate(
+                merge_threshold=args.merge_threshold,
+                status_filter=list(args.status) if args.status else None,
+                dry_run=args.dry_run,
+            )
+            print(json.dumps(summary, ensure_ascii=False))
             return 0
 
     if args.command == "feedback":

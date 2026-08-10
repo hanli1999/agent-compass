@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.4.0 (2026-08-10)
+
+### Added
+- **`activation-v2` scoring** (`agent_compass.memory.scoring`) — an opt-in five-dimension formula: `base + (context + importance + emotion + instinct) / 4`. The four auxiliary dimensions are normalised to `[0, 1]` and averaged so none can outweigh base activation; `base` keeps its native ACT-R magnitude.
+  - **`emotion_tag`** — affect attached to a memory, saturating at 1.0.
+  - **`instinct_tag`** — a five-class minimal drive set (`survival` / `kin` / `resource` / `novelty` / `transmit`), chosen as the smallest set already present in single-celled organisms rather than a taxonomy of higher motivations.
+  - **`retention_dual()`** — two-segment retention, steep for the first 7 days and flat afterwards. A single exponential cannot express "this memory was already reconsolidated, stop decaying it".
+  - **`route_score()`** — dispatches on a record's stored `formula_version`. Unknown or missing versions fall back to v1, so no existing row is ever silently rescored.
+  - **`memory_type="event"`** (importance 0.75, stability 365 days) for timeline anchors, which are rarely accessed but never stop being true.
+- **`agent_compass.retrieval` package** — bounded, summary-first recall. **Retrieval never returns full memory bodies**; it returns a ranked digest plus the `memory_id` needed to fetch a body on demand.
+  - **`Retriever` protocol** — any backend (local SQLite, a wiki, a synced remote store) plugs in behind one interface.
+  - **`LocalMemoryRetriever`** — reads the SQLite store, filters by type / status / age, summarises.
+  - **`CallableRetriever`** — wraps any `(query) -> rows` callable. The core still ships no third-party client; it ships the field mapping, normalisation and cross-source scoring instead.
+  - **`RetrievalOrchestrator`** — fans out, dedupes by `memory_id`, ranks, and applies Top-K then a token budget. A retriever that raises is recorded per source and skipped, never fatal: a flaky remote store must not take down local recall.
+  - **`summarize()`** — extractive, dependency-free, query-aware. Selected sentences are re-emitted in original reading order so the digest still parses as prose.
+  - **`render_digest()`** — formats a result for a prompt, including an explicit note of everything withheld.
+- **`Compass.recall(query, **overrides)`** and **`Compass.retrieval`**.
+- **`MemoryService.get(memory_id)`** — the expand half of the retrieval contract.
+- **`docs/retrieval-orchestration.md`** — the reasoning behind the multiplicative boost, the ordering of the three bounds, and the no-silent-truncation rule.
+
+### Changed
+- `MemoryCandidate` gained `emotion_tag` and `instinct_tag` (both `None` on v1 records).
+- `MemoryService.propose()` accepts `emotion_tag` / `instinct_tag` / `formula_version`, and opts a record into v2 automatically when a tag is supplied. An unsupported `formula_version` is rejected rather than silently accepted.
+- `MemoryService.touch()`, `prune()` and `consolidate()` now rescore through `route_score` instead of hardcoding v1.
+- `ScoreBreakdown` gained `emotion` and `instinct` fields, defaulting to `0.0`.
+
+### Fixed
+- A walrus-operator typo in `tests/property/test_invariants.py` that made the entire property suite fail to collect.
+- A property assertion that compared an un-rounded importance against the 6-decimal value `scoring.py` actually returns.
+
+### Still honest about
+- `activation-v1` remains the default. Nothing migrates on upgrade; v2 is per-record and opt-in.
+- The token estimate is `len(text) / 2`, not a real tokenizer. It is a deliberately conservative monotonic proxy — over-estimating costs a slightly under-filled prompt, under-estimating costs a blown context window.
+- The summariser is extractive. It selects sentences; it does not understand them.
+- The emotion and instinct weights are informed guesses that are internally consistent, not measured constants. They are exposed as plain dicts precisely so you can disagree with them.
+- The privacy detector is still a **baseline**, not a complete DLP product.
+- Agent Compass still does not provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
+
 ## 0.3.0 (2026-08-06)
 
 ### Added

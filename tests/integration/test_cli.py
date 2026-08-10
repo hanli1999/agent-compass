@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from agent_compass import __version__
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -27,7 +29,7 @@ def test_doctor_reports_version_json(tmp_path):
     assert result.returncode == 0
     body = json.loads(result.stdout)
     assert body["ok"] is True
-    assert body["version"] == "0.3.0"
+    assert body["version"] == __version__
     assert body["policy_version"] == "policy-v2"
 
 

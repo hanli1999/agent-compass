@@ -34,6 +34,7 @@ _SUPPORTED: dict[str, str] = {
     "memory.delete": "memory.delete.response",
     "memory.prune": "memory.prune.response",
     "memory.search": "memory.search.response",
+    "memory.consolidate": "memory.consolidate.response",
     "privacy.scan": "privacy.scan.response",
     "feedback.record": "feedback.record.response",
     "feedback.list": "feedback.list.response",
@@ -176,6 +177,19 @@ def _memory_search(compass: Compass, payload: dict) -> dict:
     return {"memories": items}
 
 
+def _memory_consolidate(_compass: Compass, payload: dict) -> dict:
+    from .memory.service import MemoryService
+
+    statuses = payload.get("statuses")
+    if statuses and not isinstance(statuses, list):
+        raise ValueError("memory.consolidate 'statuses' must be a list")
+    return _compass.memory.consolidate(
+        merge_threshold=float(payload.get("merge_threshold", MemoryService.DEFAULT_MERGE_THRESHOLD if hasattr(MemoryService, "DEFAULT_MERGE_THRESHOLD") else 0.5)),
+        status_filter=list(statuses) if statuses else None,
+        dry_run=bool(payload.get("dry_run", False)),
+    )
+
+
 def _task_delete(compass: Compass, payload: dict) -> dict:
     task_id = payload.get("task_id")
     if not task_id:
@@ -256,6 +270,7 @@ _HANDLERS: dict[str, Callable[[Compass, dict], Any]] = {
     "memory.delete": _memory_delete,
     "memory.prune": _memory_prune,
     "memory.search": _memory_search,
+    "memory.consolidate": _memory_consolidate,
     "privacy.scan": _privacy_scan,
     "feedback.record": _feedback_record,
     "feedback.list": _feedback_list,
