@@ -365,3 +365,112 @@ def test_token_estimate_is_monotonic_in_length():
 @given(text=st.text(min_size=1, max_size=1000))
 def test_token_estimate_is_always_positive_for_non_empty_text(text):
     assert estimate_tokens(text) >= 1
+
+
+# ------------------------------------------------------------ external sources
+
+def test_callable_retriever_maps_rows_to_items():
+    from agent_compass.retrieval import CallableRetriever
+
+    rows = [{"memory_id": "r1", "content": "the migration lock was stuck", "score": 1.2}]
+    retriever = CallableRetriever("wiki", lambda q: rows)
+    items = retriever.retrieve(RetrievalQuery(keywords=["migration"]))
+    assert len(items) == 1
+    assert items[0].source == "wiki"
+    assert items[0].memory_id == "r1"
+    assert items[0].keyword_hits == 1
+    assert items[0].score == pytest.approx(1.2)
+
+
+def test_callable_retriever_honours_a_custom_field_map():
+    from agent_compass.retrieval import CallableRetriever
+
+    rows = [{"id": "x", "notes": "some text here"}]
+    retriever = CallableRetriever(
+        "bitable", lambda q: rows, field_map={"memory_id": "id", "content": "notes"}
+    )
+    assert retriever.retrieve(RetrievalQuery())[0].memory_id == "x"
+
+
+def test_callable_retriever_reads_attributes_as_well_as_dicts():
+    from agent_compass.retrieval import CallableRetriever
+
+    class Row:
+        memory_id = "obj"
+        content = "attribute access works"
+
+    assert CallableRetriever("o", lambda q: [Row()]).retrieve(RetrievalQuery())[0].memory_id == "obj"
+
+
+def test_callable_retriever_gives_unscored_rows_a_usable_default():
+    from agent_compass.retrieval import CallableRetriever, DEFAULT_REMOTE_SCORE
+
+    item = CallableRetriever("r", lambda q: [{"content": "no score field"}]).retrieve(
+        RetrievalQuery()
+    )[0]
+    assert item.score == pytest.approx(DEFAULT_REMOTE_SCORE)
+    assert item.score > 0.0  # must not sort to the bottom by default
+
+
+def test_callable_retriever_skips_empty_rows():
+    from agent_compass.retrieval import CallableRetriever
+
+    rows = [{"content": ""}, {"content": None}, {"content": "real"}]
+    assert len(CallableRetriever("r", lambda q: rows).retrieve(RetrievalQuery())) == 1
+
+
+def test_callable_retriever_caps_row_count():
+    from agent_compass.retrieval import CallableRetriever
+
+    rows = [{"content": f"row {i}"} for i in range(500)]
+    retriever = CallableRetriever("r", lambda q: rows, max_rows=10)
+    assert len(retriever.retrieve(RetrievalQuery())) == 10
+
+
+def test_callable_retriever_requires_a_name():
+    from agent_compass.retrieval import CallableRetriever
+
+    with pytest.raises(ValueError):
+        CallableRetriever("", lambda q: [])
+    with pytest.raises(ValueError):
+        CallableRetriever("r", lambda q: [], max_rows=0)
+
+
+def test_callable_retriever_receives_the_full_query_for_pushdown():
+    from agent_compass.retrieval import CallableRetriever
+
+    seen = {}
+
+    def fetch(query):
+        seen["limit"] = query.limit
+        seen["text"] = query.text
+        return []
+
+    CallableRetriever("r", fetch).retrieve(RetrievalQuery(text="hello", limit=3))
+    assert seen == {"limit": 3, "text": "hello"}
+
+
+def test_external_and_local_sources_rank_together(tmp_path):
+    from agent_compass.retrieval import CallableRetriever
+
+    compass = _compass(tmp_path)
+    compass.memory.propose("local note about deploys", keywords=["deploy"])
+    compass.retrieval.retrievers.append(
+        CallableRetriever("wiki", lambda q: [{"memory_id": "w1", "content": "wiki deploy runbook"}])
+    )
+    result = compass.recall("deploy")
+    assert sorted(i.source for i in result) == ["local", "wiki"]
+
+
+def test_a_broken_external_source_does_not_break_local_recall(tmp_path):
+    from agent_compass.retrieval import CallableRetriever
+
+    def boom(query):
+        raise ConnectionError("no network")
+
+    compass = _compass(tmp_path)
+    compass.memory.propose("local survives", keywords=["survives"])
+    compass.retrieval.retrievers.append(CallableRetriever("flaky", boom))
+    result = compass.recall("survives")
+    assert len(result) == 1
+    assert "flaky" in result.errors

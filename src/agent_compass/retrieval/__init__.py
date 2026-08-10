@@ -14,6 +14,11 @@ from .models import (
 from .protocol import Retriever
 from .summarize import DEFAULT_SUMMARY_CHARS, summarize
 from .local import LocalMemoryRetriever, count_keyword_hits
+from .external import (
+    DEFAULT_FIELD_MAP,
+    DEFAULT_REMOTE_SCORE,
+    CallableRetriever,
+)
 from .orchestrator import (
     DEFAULT_TOP_K,
     KEYWORD_BOOST_PER_HIT,
@@ -24,6 +29,9 @@ from .orchestrator import (
 
 __all__ = [
     "CHARS_PER_TOKEN",
+    "CallableRetriever",
+    "DEFAULT_FIELD_MAP",
+    "DEFAULT_REMOTE_SCORE",
     "DEFAULT_SUMMARY_CHARS",
     "DEFAULT_TOP_K",
     "KEYWORD_BOOST_PER_HIT",

@@ -14,6 +14,7 @@ from .models import (
 from .policy.engine import PolicyEngine
 from .privacy.boundary import PrivacyBoundary
 from .retrieval import (
+    CallableRetriever,
     LocalMemoryRetriever,
     RetrievalOrchestrator,
     RetrievalQuery,
@@ -79,6 +80,7 @@ __all__ = [
     "RetrievalQuery",
     "RetrievalResult",
     "LocalMemoryRetriever",
+    "CallableRetriever",
     "render_digest",
     "Checkpoint",
     "IdempotencyRegistry",
