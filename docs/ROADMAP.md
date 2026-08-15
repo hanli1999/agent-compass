@@ -1,5 +1,28 @@
 # Agent Compass Roadmap
 
+## In progress
+
+### v0.9.0 — Documentation, skill pack, dogfood (2026-08-15 →)
+
+v0.8.0 shipped the host SDK but left two jobs undone: a fresh host had no
+end-to-end documentation, and no adopter outside 幻梦 / 银月 had actually
+walked through the recipe. v0.9.0 closes both.
+
+- **`docs/host-integration.md`** — a 360-line walkthrough that takes a
+  fresh host from `pip install -e .` through the four-line host loop,
+  every `DecisionAction` branch, the four v3 fields (with honest
+  self-report guidance), web adapter swapping, the hooks installer, the
+  privacy boundary, the headline verification test, and a troubleshooting
+  table. Done.
+- **`.skills/yinyue-methods/agent-compass/`** — a Claude skill pack that
+  bundles the v0.8.0 SDK recipe into a single, installable artefact.
+  Lets any Claude Code adopter drop the four-line loop into their own
+  project without re-reading the docs end to end.
+- **银月 dogfood** — the SDK is integrated into 银月's own host loop and
+  exercised against a real task. The point is not to add new tests; it
+  is to surface integration friction (and to keep the "long-thinking
+  symptom" answer honest) before a third adopter arrives.
+
 ## Shipped
 
 ### v0.8.0 — Host SDK and default integration (2026-08-15)

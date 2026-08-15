@@ -35,7 +35,7 @@ decision = loop.decide("what next")          # auto-folds the tracker snapshot
 loop.record("answer")                        # after a text-only response
 ```
 
-`install_claude_code_hooks()` writes the five Claude Code events to `~/.claude/settings.json` for hosts that want a working hook set without a manual merge. See `CHANGELOG.md` and `docs/host-integration.md` (when it lands).
+`install_claude_code_hooks()` writes the five Claude Code events to `~/.claude/settings.json` for hosts that want a working hook set without a manual merge. See `CHANGELOG.md` and `docs/host-integration.md` for the full walkthrough.
 
 ## What it does
 

@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.8.0 (unreleased)
+## 0.9.0 (unreleased)
+
+### Added
+- **`docs/host-integration.md`** — a 360-line walkthrough that takes a fresh host from `pip install -e .` to a verified loop in one read. Covers install, the four-line host loop, every `DecisionAction` branch handled, the four v3 fields with honest-self-report guidance, web adapter swapping, the cold-start hooks installer, the privacy boundary, the headline verification test, and a troubleshooting table.
+- **README pointer** — the v0.8.0 host-side helper block now references `docs/host-integration.md` directly instead of "(when it lands)".
+
+### Still honest about
+- The runtime helper is a four-line wrapper, not a turnkey agent. The doc names the things it does *not* do (no ReAct execution, no model-assisted self-evaluator, no cross-session `AutoTracker` persistence).
+- Agent Compass still does not provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
+
+---
+
+## 0.8.0 (2026-08-15)
 
 ### Added
 - **`agent_compass.runtime` package** — the host-side glue that turns Agent Compass into a self-driving loop. A fresh host that follows the recipe gets v3 enabled, the four v3 fields auto-tracked, and the `DuckDuckGoAdapter` wired in — no manual wiring required.
