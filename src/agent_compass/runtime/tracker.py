@@ -13,8 +13,10 @@ just happened.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from typing import Iterable
+from pathlib import Path
+from typing import Iterable, Any
 
 
 #: How many recent actions we keep around. The engine only reads the
@@ -159,6 +161,77 @@ class AutoTracker:
         self._recent_actions.clear()
         self._complexity_score = 0.0
         self._uncertainty_score = 0.0
+
+    # ---- persistence ---------------------------------------------------
+    #
+    # The tracker is in-memory by default. A host that wants to
+    # remember the silent-thinking counter and the recent-actions
+    # window across sessions calls ``flush_to(path)`` from a Stop
+    # hook or a shutdown handler, and ``restore_from(path)`` from a
+    # SessionStart hook. The format is a single-line JSON object;
+    # restoring is a no-op if the file does not exist.
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the tracker state as a JSON-friendly dict.
+
+        Keys mirror the four v3 fields plus a ``schema_version`` so a
+        future format change can detect a mismatch instead of silently
+        re-scoring.
+        """
+        return {
+            "schema_version": 1,
+            "consecutive_answer_directly": self._consecutive_answer_directly,
+            "recent_actions": list(self._recent_actions),
+            "complexity_score": self._complexity_score,
+            "uncertainty_score": self._uncertainty_score,
+        }
+
+    def from_dict(self, data: dict[str, Any]) -> None:
+        """Replace the tracker state from a ``to_dict`` payload.
+
+        Unknown keys are ignored; missing keys fall back to the neutral
+        defaults. ``schema_version`` mismatches raise ``ValueError``
+        rather than silently re-scoring.
+        """
+        version = data.get("schema_version", 1)
+        if version != 1:
+            raise ValueError(
+                f"tracker snapshot schema_version={version} is not supported "
+                "(this build understands schema_version=1)"
+            )
+        self._consecutive_answer_directly = int(data.get("consecutive_answer_directly", 0))
+        recent = data.get("recent_actions", []) or []
+        self._recent_actions = list(recent)[-self._window :]
+        self._complexity_score = _clamp(float(data.get("complexity_score", 0.0)))
+        self._uncertainty_score = _clamp(float(data.get("uncertainty_score", 0.0)))
+
+    def flush_to(self, path: str | Path) -> None:
+        """Write the current state to ``path`` as a single JSON object.
+
+        Parent directories are created if they do not exist. The write
+        is atomic: the file is written to ``path + ".tmp"`` first and
+        then renamed, so a crash mid-flush cannot leave the host with
+        a half-written state file.
+        """
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(json.dumps(self.to_dict(), ensure_ascii=False), encoding="utf-8")
+        tmp.replace(target)
+
+    def restore_from(self, path: str | Path) -> bool:
+        """Restore the tracker state from ``path`` if it exists.
+
+        Returns ``True`` when state was loaded, ``False`` when the
+        file did not exist (the tracker keeps its current state).
+        Corrupt JSON raises ``ValueError`` so the host can decide
+        whether to fall back to neutral or fail closed.
+        """
+        target = Path(path)
+        if not target.exists():
+            return False
+        self.from_dict(json.loads(target.read_text(encoding="utf-8")))
+        return True
 
     # ---- snapshot ------------------------------------------------------
 

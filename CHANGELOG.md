@@ -1,6 +1,46 @@
 # Changelog
 
-## 0.9.2 (unreleased)
+## 0.9.3 (unreleased)
+
+### Added
+- **`AutoTracker` persistence** (v0.9.3+, opt-in) — `flush_to(path)` /
+  `restore_from(path)` round-trip the four v3 fields as a single-line
+  JSON object. Atomic write (`path + ".tmp"` then rename) so a crash
+  mid-flush cannot leave a half-written state file. `restore_from` is
+  a no-op when the file does not exist. `to_dict` / `from_dict` expose
+  the format for hosts that want to embed the snapshot in their own
+  JSON sidecar.
+- **`schema_version` field** in the snapshot payload. Unknown versions
+  raise `ValueError` instead of silently re-scoring. Future format
+  changes can detect a mismatch and refuse to load, rather than
+  producing wrong numbers from a half-recognized blob.
+- **Skill pack doc** — `SKILL.md` gains a "Persistence" section so the
+  recipe is discoverable from the pack, not just the long-form doc.
+
+### Tests
+- `tests/unit/test_runtime.py` gains six persistence tests:
+  `test_tracker_to_dict_round_trip`, `test_tracker_flush_to_creates_parent_dir`
+  (no leftover `.tmp` after atomic rename),
+  `test_tracker_restore_from_returns_false_when_missing`,
+  `test_tracker_flush_then_restore_round_trip` (the headline case:
+  fresh `AutoTracker()` after a flush picks up the silence counter
+  and the two scores), `test_tracker_from_dict_rejects_unknown_schema_version`,
+  and `test_tracker_from_dict_tolerates_missing_keys`.
+
+### Still honest about
+- `HostLoop` does not auto-flush. A host that wants persistence across
+  sessions wires `restore_from` into SessionStart and `flush_to` into
+  Stop (or any other timing that fits the host loop). The SDK ships
+  the primitives; the timing is the host's call.
+- The in-memory tracker is still the default. `apply_smart_defaults`
+  does not opt the host into persistence.
+- Agent Compass still does not provide consciousness, subjective
+  experience, true autonomous life, or permission to skip human
+  approval for high-impact actions.
+
+---
+
+## 0.9.2 (2026-08-15)
 
 ### Added
 - **REPL v3 commands** (`agent_compass.repl.CompassRepl`) — interactive v3 state inspection. The REPL auto-wires a `HostLoop` when `compass.config.policy_v3_enabled` is on; v2 sessions skip the wiring entirely and report `v3 not enabled` for the v3 commands.

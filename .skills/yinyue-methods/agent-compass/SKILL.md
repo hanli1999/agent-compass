@@ -158,6 +158,30 @@ a stand-alone script so any adopter can run it against their install.
 - The hooks installer is for cold-start; power users merge by hand.
 - The privacy detector is a baseline, not a complete DLP product.
 
+## Persistence (v0.9.3+)
+
+The `AutoTracker` is in-memory by default. A host that wants the
+silent-thinking counter and the recent-actions window to survive a
+session restart calls `flush_to(path)` from a Stop hook and
+`restore_from(path)` from a SessionStart hook:
+
+```python
+# SessionStart
+loop.tracker.restore_from("~/.claude/state/tracker.json")
+
+# Stop (after the host is done recording)
+loop.tracker.flush_to("~/.claude/state/tracker.json")
+```
+
+The format is a single-line JSON object with a `schema_version`
+field; unknown versions raise `ValueError` instead of silently
+re-scoring. Atomic write (`path + ".tmp"` then rename) means a
+crash mid-flush cannot leave the host with a half-written state.
+
+`HostLoop` does not auto-flush. The host picks the moment — typical
+choices are the Stop hook (cheap, one write per session) or every
+N records (more granular, more I/O).
+
 ## Related
 
 - `docs/host-integration.md` — the long-form walkthrough that this

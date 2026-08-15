@@ -119,6 +119,84 @@ def test_tracker_empty_action_is_noop():
     assert t.consecutive_answer_directly == 0
 
 
+def test_tracker_to_dict_round_trip(tmp_path):
+    """to_dict then from_dict on a fresh tracker restores the state."""
+    a = AutoTracker()
+    a.record_answer()
+    a.record_answer()
+    a.record_answer()
+    a.record_action("retrieve")
+    a.record_action("web_search")
+    a.set_complexity(0.7)
+    a.set_uncertainty(0.4)
+
+    blob = a.to_dict()
+
+    b = AutoTracker()
+    b.from_dict(blob)
+    assert b.consecutive_answer_directly == 0  # record_action reset it
+    assert b.recent_actions == ("retrieve", "web_search")
+    assert abs(b.complexity_score - 0.7) < 1e-9
+    assert abs(b.uncertainty_score - 0.4) < 1e-9
+
+
+def test_tracker_flush_to_creates_parent_dir(tmp_path):
+    """flush_to writes even when the parent dir does not exist yet."""
+    a = AutoTracker()
+    a.record_action("retrieve")
+    target = tmp_path / "nested" / "state" / "tracker.json"
+    assert not target.parent.exists()
+    a.flush_to(target)
+    assert target.exists()
+    # Atomic write: no leftover .tmp file.
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    assert not tmp.exists()
+
+
+def test_tracker_restore_from_returns_false_when_missing(tmp_path):
+    """restore_from is a no-op when the file does not exist."""
+    a = AutoTracker()
+    loaded = a.restore_from(tmp_path / "nope.json")
+    assert loaded is False
+    assert a.consecutive_answer_directly == 0
+
+
+def test_tracker_flush_then_restore_round_trip(tmp_path):
+    """The headline test for v0.9.3 persistence: a tracker can be
+    written to disk and a fresh one can pick up where it left off."""
+    a = AutoTracker()
+    a.record_answer()
+    a.record_answer()
+    a.record_answer()
+    a.set_complexity(0.6)
+    a.set_uncertainty(0.3)
+    a.flush_to(tmp_path / "tracker.json")
+
+    b = AutoTracker()
+    loaded = b.restore_from(tmp_path / "tracker.json")
+    assert loaded is True
+    assert b.consecutive_answer_directly == 3
+    assert abs(b.complexity_score - 0.6) < 1e-9
+    assert abs(b.uncertainty_score - 0.3) < 1e-9
+
+
+def test_tracker_from_dict_rejects_unknown_schema_version(tmp_path):
+    """A schema_version mismatch raises instead of silently re-scoring."""
+    a = AutoTracker()
+    with pytest.raises(ValueError, match="schema_version"):
+        a.from_dict({"schema_version": 999, "consecutive_answer_directly": 1})
+
+
+def test_tracker_from_dict_tolerates_missing_keys(tmp_path):
+    """A partial file (older format, manual edit) falls back to neutral
+    defaults instead of crashing."""
+    a = AutoTracker()
+    a.from_dict({"consecutive_answer_directly": 2})
+    assert a.consecutive_answer_directly == 2
+    assert a.recent_actions == ()
+    assert a.complexity_score == 0.0
+
+
 # ---- HostLoop -----------------------------------------------------------
 
 

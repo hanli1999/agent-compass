@@ -2,6 +2,18 @@
 
 ## In progress
 
+### v0.9.3 — AutoTracker persistence (2026-08-15)
+
+v0.8.0's "what does not land" list included *"A persistence layer for
+`AutoTracker`. The tracker is in-memory only."* v0.9.3 ships the
+minimum useful subset: `to_dict` / `from_dict` for hosts that want to
+embed the snapshot in their own sidecar, and `flush_to(path)` /
+`restore_from(path)` for hosts that want a one-call round-trip.
+Atomic write (`.tmp` + rename), `schema_version=1` payload, partial
+files tolerated, unknown versions raise. `HostLoop` does not
+auto-flush; the host picks the moment (typical: SessionStart +
+Stop).
+
 ### v0.9.2 — REPL v3 commands (2026-08-15)
 
 v0.8.0 shipped the SDK; v0.9.1 closed the `remote_allowed` friction;
