@@ -108,8 +108,11 @@ def test_memory_search_filters(tmp_path):
 
 
 def test_feedback_stats(tmp_path):
-    _run(["--format", "json", "feedback", "add", "--signal", "ok", "--label", "positive", "--task-id", "t1"], tmp_path)
-    _run(["--format", "json", "feedback", "add", "--signal", "bad", "--label", "negative", "--task-id", "t1"], tmp_path)
+    # v0.5.0+ — feedback add is async by default so it does not block the
+    # PostToolUse hook. This test is about the stats aggregation, not
+    # the async path, so it uses --sync to skip the pending file.
+    _run(["--format", "json", "feedback", "add", "--sync", "--signal", "ok", "--label", "positive", "--task-id", "t1"], tmp_path)
+    _run(["--format", "json", "feedback", "add", "--sync", "--signal", "bad", "--label", "negative", "--task-id", "t1"], tmp_path)
     result = _run(["--format", "json", "feedback", "stats", "--task-id", "t1"], tmp_path)
     body = json.loads(result.stdout)
     assert body["total"] == 2

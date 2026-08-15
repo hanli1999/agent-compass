@@ -194,6 +194,24 @@ Errors come back as `{"type": "error", "payload": {"code": "...", "message": "..
 
 The repository includes example hooks for SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / Stop. The core does not depend on Claude Code, Anthropic, OpenAI, LangChain, or a cloud database. Use the JSONL protocol or Python API from any agent runtime.
 
+### Hooks (0.5.0+)
+
+The example hook set in `hooks/settings.example.json` wires up all five events. Two design points matter:
+
+- **`UserPromptSubmit` writes the `last_task_id` pointer** at `~/.claude/state/last_task_id` via `agent-compass context set`. The `Stop` hook reads that file (or the `AGENT_COMPASS_TASK_ID` env var) so it knows which task to checkpoint — see `task checkpoint --unspecified` below.
+- **`PostToolUse` is async** by default. `agent-compass feedback add` appends to `~/.claude/state/feedback_pending.jsonl` and returns 0 immediately, so a sound-reminder hook on the same event no longer races the SQLite write. The `Stop` hook runs `agent-compass feedback flush` to persist the queue. Use `--sync` or set `AGENT_COMPASS_FEEDBACK_SYNC=1` to opt back into synchronous mode.
+
+### `task checkpoint --unspecified`
+
+The `Stop` hook uses `--unspecified` when it has no explicit task id. The CLI resolves the id via this priority chain:
+
+1. The `task_id` positional arg (if provided).
+2. The state file at `~/.claude/state/last_task_id` (overridable via `AGENT_COMPASS_CLAUDE_STATE_DIR`).
+3. The `AGENT_COMPASS_TASK_ID` env var.
+4. The literal string `"unspecified"`, with a stderr warning and a placeholder task created on the fly so the checkpoint can still land.
+
+A `Stop` hook that lands on the literal `"unspecified"` id is a real signal that the host lost its task id somewhere — the warning exists to surface that.
+
 ## Non-goals and honest limits
 
 Agent Compass provides persistent context, task continuity, feedback events, and auditable policy decisions. It does **not** provide consciousness, subjective experience, true autonomous life, guaranteed permanent memory, online model training, or permission to replace human approval for high-impact actions.

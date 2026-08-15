@@ -109,6 +109,58 @@ class TaskService:
         self.store.save_checkpoint(task_id, phase, ck.__dict__)
         return task.to_dict()
 
+    def checkpoint_or_create(
+        self,
+        task_id: str,
+        phase: str,
+        *,
+        fallback_goal: str = "unspecified task (auto-created by checkpoint)",
+        completed_steps: list[str] | None = None,
+        pending_steps: list[str] | None = None,
+        notes: list[str] | None = None,
+        artifacts: list[str] | None = None,
+    ) -> tuple[dict, bool]:
+        """Like :meth:`checkpoint` but creates a placeholder task first when needed.
+
+        Returns ``(task_dict, created)`` so a caller can tell whether a
+        new task was born. The motivation is the ``Stop`` hook: when
+        the resolution chain lands on the literal ``"unspecified"`` id
+        (no state file, no env var), the hook still needs to record
+        *something*. Crashing the host because there is no task to
+        checkpoint is the wrong default — a placeholder is more useful
+        than a stack trace.
+
+        The created task gets a fresh ``task_xxxxx`` id from the
+        store, *not* the placeholder id the caller passed. The
+        returned ``created=True`` flag lets the caller log the
+        mismatch.
+        """
+        record = self.store.get_task(task_id)
+        if record is None:
+            new_task = self.create(fallback_goal)
+            return (
+                self.checkpoint(
+                    new_task.task_id,
+                    phase,
+                    completed_steps=completed_steps,
+                    pending_steps=pending_steps,
+                    notes=notes,
+                    artifacts=artifacts,
+                ),
+                True,
+            )
+        return (
+            self.checkpoint(
+                task_id,
+                phase,
+                completed_steps=completed_steps,
+                pending_steps=pending_steps,
+                notes=notes,
+                artifacts=artifacts,
+            ),
+            False,
+        )
+
     def resume(self, task_id: str) -> dict:
         record = self.store.get_task(task_id)
         if record is None:
@@ -165,3 +217,32 @@ class FeedbackService:
             "by_scope": by_scope,
             "task_id": task_id,
         }
+
+    def flush_pending(self) -> dict[str, Any]:
+        """Persist all queued async feedback events.
+
+        Returns a summary dict ``{"flushed": N, "errors": [...]}`` so a
+        caller (hook, cron, or the operator running this by hand) can
+        confirm the queue is empty. The function is safe to call when
+        the queue is empty — it returns ``{"flushed": 0, "errors": []}``.
+        """
+        from ..feedback.pending import swap_pending
+        from ..models import FeedbackEvent
+
+        events = swap_pending()
+        errors: list[str] = []
+        for entry in events:
+            try:
+                event = FeedbackEvent(
+                    signal=entry.get("signal", "ok"),
+                    label=entry.get("label", "neutral"),
+                    scope=entry.get("scope", "this_task"),
+                    task_id=entry.get("task_id"),
+                    decision_id=entry.get("decision_id"),
+                    notes=entry.get("notes", ""),
+                )
+            except (TypeError, ValueError) as exc:
+                errors.append(f"malformed_event: {exc}")
+                continue
+            self.store.save_feedback(event.to_dict())
+        return {"flushed": len(events) - len(errors), "errors": errors, "considered": len(events)}

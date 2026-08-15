@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 (unreleased)
+## 0.7.0 (2026-08-15)
 
 ### Added
 - **Built-in web adapters** (`agent_compass.adapters.web_search`, `agent_compass.adapters.web_fetch`).
@@ -33,7 +33,7 @@
 
 ---
 
-## 0.6.0 (unreleased)
+## 0.6.0 (2026-08-15)
 
 ### Added
 - **policy-v3, opt-in** (`agent_compass.policy.engine`) — three new "action bias" branches that fire *before* the v2 ASK_USER / RETRIEVE / ANSWER_DIRECTLY order. Designed against the two symptoms a host agent surfaced on 2026-08-15: long thinking turns with no external action, and never reaching for a web search unprompted.
@@ -62,9 +62,35 @@
 
 ---
 
-## 0.5.0 (unreleased)
+## 0.5.0 (2026-08-15)
 
-Target: 2026-08-20. Scope unchanged from the earlier roadmap — the hooks-completion work driven by 幻梦's day-one report. No code yet; reserved as the version that will absorb that work when it ships.
+### Added
+- **`agent_compass.context` module** — the small "current task" pointer a hook needs.
+  - **`set_last_task_id(task_id)` / `get_last_task_id()` / `clear_last_task_id()`** — read and write `~/.claude/state/last_task_id`. The state directory is overridable via `AGENT_COMPASS_CLAUDE_STATE_DIR` and lives *outside* `data_dir` so a host that wipes its memory store does not lose the pointer.
+  - **`resolve_task_id(explicit=..., unspecified=...)`** — the documented priority chain: explicit arg wins; `unspecified=True` then tries the state file, the `AGENT_COMPASS_TASK_ID` env var, then falls back to the literal string `"unspecified"`. Returns a `ContextResolution` with the source so a hook can audit its own bookkeeping.
+- **`agent-compass context set/show/clear`** subcommand — for the `UserPromptSubmit` hook to write the pointer and for an operator (or a debug session) to inspect or reset it.
+- **`task checkpoint --unspecified`** — the flag a `Stop` hook uses when it has no explicit task id. Resolves via the state file written by `UserPromptSubmit`, the env var, or the literal `"unspecified"` fallback. A literal "unspecified" return logs a warning to stderr (so a host can surface it) and creates a placeholder task on the fly so the checkpoint still lands. The `task_id_source` field on the response tells the host which branch fired.
+- **`TaskService.checkpoint_or_create(task_id, phase, ...)`** — the service-level primitive the CLI uses. Returns `(task_dict, created)` so callers can tell whether a new placeholder task was born. The created task gets a fresh `task_xxxxx` id from the store; the literal `"unspecified"` id never lands in `tasks.task_id`.
+- **Async `feedback add` by default** (`agent_compass.feedback.pending`).
+  - **`append_pending(event)`** — write one line to `~/.claude/state/feedback_pending.jsonl`. Returns the path that was written.
+  - **`swap_pending()`** — atomically read the pending file and truncate it, with a sibling `feedback_pending.lock` so two concurrent flushes do not race.
+  - **`is_sync_mode()`** — reads `AGENT_COMPASS_FEEDBACK_SYNC=1` so a caller can opt back into synchronous writes from a cron or a unit test.
+  - **`agent-compass feedback flush`** — read the pending file, persist each event through `FeedbackService.record`, return `{"flushed": N, "errors": [...], "considered": N}`.
+  - **`agent-compass feedback add --sync`** — explicit per-call opt-out of async, for callers that prefer the immediate path.
+  - The async path is exactly the missing piece 幻梦 asked for: a `PostToolUse` hook that also runs a sound reminder no longer races the SQLite write.
+- **`AGENT_COMPASS_FEEDBACK_SYNC=1`** env var — flip `feedback add` back to synchronous mode for the entire host.
+- **CHANGELOG placeholder removed** — the v0.5.0 row is no longer a target date; it is shipped.
+
+### Changed
+- `task checkpoint <task_id>` accepts an *optional* positional `task_id` (was required). When omitted, the CLI requires `--unspecified` and resolves via the chain.
+- `feedback add` no longer writes to SQLite by default. The new `feedback flush` subcommand persists. Existing callers that rely on the synchronous path must use `--sync` or set `AGENT_COMPASS_FEEDBACK_SYNC=1`. The `tests/integration/test_cli.py::test_feedback_stats` regression was updated to use `--sync`; the test is about stats, not the async flow.
+
+### Still honest about
+- The `last_task_id` file is plain text. A host that races two `UserPromptSubmit` events in the same shell can see a torn read; in practice the `Stop` hook runs after the prompt and reads whatever the last `set` wrote.
+- The async feedback path is best-effort. If the process dies between `append_pending` and `flush`, the queued events survive on disk and the next `feedback flush` picks them up.
+- A `task checkpoint --unspecified` that lands on the literal `"unspecified"` id creates a placeholder task. The created task gets a fresh `task_xxxxx` id, so the placeholder does not pollute the literal `"unspecified"` namespace. A `Stop` hook should treat that as "I should have known which task to checkpoint" and surface the warning.
+- The privacy detector is still a **baseline**, not a complete DLP product.
+- Agent Compass still does not provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
 
 ---
 

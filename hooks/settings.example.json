@@ -18,6 +18,11 @@
           {
             "type": "command",
             "command": "agent-compass decide --input \"$PROMPT\" --time-sensitive"
+          },
+          {
+            "type": "command",
+            "command": "agent-compass context set --task-id \"$TASK_ID\"",
+            "_note": "v0.5.0+ — refresh the last_task_id pointer whenever the host sets a current task. Stop will read this file to know which task to checkpoint."
           }
         ]
       }
@@ -39,7 +44,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "agent-compass feedback add --signal $TOOL_RESULT --label neutral --notes \"auto from hook\""
+            "command": "agent-compass feedback add --signal $TOOL_RESULT --label neutral --notes \"auto from hook\"",
+            "_note": "v0.5.0+ — async by default. The call appends to ~/.claude/state/feedback_pending.jsonl and returns 0 immediately. A 'feedback flush' (run from a low-frequency Stop hook or cron) persists the queue."
           }
         ]
       }
@@ -50,7 +56,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "agent-compass task checkpoint $TASK_ID final --note \"session ended\""
+            "command": "agent-compass task checkpoint --unspecified final --note \"session ended\"",
+            "_note": "v0.5.0+ — --unspecified resolves task_id from the state file written by UserPromptSubmit, then AGENT_COMPASS_TASK_ID env var, then falls back to 'unspecified' with a stderr warning. Avoids checkpointing the wrong task."
+          },
+          {
+            "type": "command",
+            "command": "agent-compass feedback flush",
+            "_note": "v0.5.0+ — persist any feedback events queued by the async PostToolUse hook. Designed to be cheap; safe to run on every Stop."
           }
         ]
       }

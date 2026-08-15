@@ -102,7 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
     advance.add_argument("--completed-step")
     advance.add_argument("--reason", default="")
     checkpoint = task_sub.add_parser("checkpoint")
-    checkpoint.add_argument("task_id")
+    checkpoint.add_argument("task_id", nargs="?", default=None,
+                            help="Task id. Omit with --unspecified to resolve from the last_task_id state file, "
+                                 "the AGENT_COMPASS_TASK_ID env var, or fall back to 'unspecified'.")
+    checkpoint.add_argument("--unspecified", action="store_true",
+                            help="Skip explicit task_id and resolve via state file -> env -> 'unspecified'.")
     checkpoint.add_argument("phase")
     checkpoint.add_argument("--completed-step", action="append", default=[])
     checkpoint.add_argument("--pending-step", action="append", default=[])
@@ -172,11 +176,28 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--task-id")
     add.add_argument("--decision-id")
     add.add_argument("--notes", default="")
+    add.add_argument("--sync", action="store_true",
+                     help="Write to the SQLite store immediately instead of the async pending file. "
+                          "Equivalent to setting AGENT_COMPASS_FEEDBACK_SYNC=1.")
+    flush = feedback_sub.add_parser("flush",
+                                    help="Persist all queued async feedback events. Idempotent.")
     flist = feedback_sub.add_parser("list")
     flist.add_argument("--task-id")
     flist.add_argument("--limit", type=int, default=20)
     stats = feedback_sub.add_parser("stats")
     stats.add_argument("--task-id")
+
+    # v0.5.0+ — small "current task" pointer for hooks. UserPromptSubmit
+    # writes it; Stop reads it. The state lives outside ``data_dir`` so
+    # wiping the memory store does not lose the pointer.
+    context = sub.add_parser("context",
+                             help="Read or write the per-session 'current task' pointer used by hooks.")
+    _attach_common(context)
+    context_sub = context.add_subparsers(dest="context_command", required=True)
+    context_set = context_sub.add_parser("set")
+    context_set.add_argument("--task-id", required=True)
+    context_show = context_sub.add_parser("show")
+    context_clear = context_sub.add_parser("clear")
 
     return parser
 
@@ -271,15 +292,42 @@ def main(argv: list[str] | None = None) -> int:
             print(fmt.render_task(updated))
             return 0
         if args.task_command == "checkpoint":
-            updated = c.tasks.checkpoint(
-                args.task_id,
+            from .context import resolve_task_id
+            resolution = resolve_task_id(explicit=args.task_id, unspecified=args.unspecified)
+            if resolution.source == "missing":
+                # The caller did not pass a task id, did not pass
+                # --unspecified, and the resolution chain turned up
+                # nothing. That is a real error — fail loudly so the
+                # host's hook machinery surfaces it.
+                print(
+                    "error: task checkpoint needs a task_id, or --unspecified to resolve from "
+                    "~/.claude/state/last_task_id / AGENT_COMPASS_TASK_ID / 'unspecified'",
+                    file=sys.stderr,
+                )
+                return 2
+            if resolution.source != "explicit":
+                # Resolved via state file, env var, or the literal
+                # "unspecified" fallback. Log a warning on stderr so a
+                # Stop hook falling through to "unspecified" is
+                # observable, and reflect the source in the JSON
+                # payload so the host can audit its own bookkeeping.
+                message = (
+                    f"warning: task checkpoint resolved task_id={resolution.task_id!r} "
+                    f"via {resolution.source!r}; pass an explicit task_id to silence this."
+                )
+                print(message, file=sys.stderr)
+            updated, created = c.tasks.checkpoint_or_create(
+                resolution.task_id,
                 args.phase,
                 completed_steps=list(args.completed_step),
                 pending_steps=list(args.pending_step),
                 notes=list(args.note),
                 artifacts=list(args.artifact),
             )
-            print(fmt.render_task(updated))
+            payload = updated
+            if isinstance(payload, dict) and resolution.source != "explicit":
+                payload = {**payload, "task_id_source": resolution.source, "task_created": created}
+            print(fmt.render_task(payload))
             return 0
         if args.task_command == "resume":
             print(json.dumps(c.tasks.resume(args.task_id), ensure_ascii=False))
@@ -371,23 +419,67 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
     if args.command == "feedback":
+        from .feedback.pending import append_pending, is_sync_mode
+
         c = _compass_from_args(args)
         if args.feedback_command == "add":
-            event = c.feedback.record(
-                args.signal,
-                label=args.label,
-                scope=args.scope,
-                task_id=args.task_id,
-                decision_id=args.decision_id,
-                notes=args.notes,
-            )
-            print(fmt.render_feedback(event.to_dict()))
+            event_payload = {
+                "signal": args.signal,
+                "label": args.label,
+                "scope": args.scope,
+                "task_id": args.task_id,
+                "decision_id": args.decision_id,
+                "notes": args.notes,
+            }
+            if args.sync or is_sync_mode():
+                event = c.feedback.record(
+                    args.signal,
+                    label=args.label,
+                    scope=args.scope,
+                    task_id=args.task_id,
+                    decision_id=args.decision_id,
+                    notes=args.notes,
+                )
+                print(fmt.render_feedback(event.to_dict()))
+                return 0
+            # Default async path: append to the pending file and return
+            # 0 immediately. ``feedback flush`` will persist it later.
+            pending_path = append_pending(event_payload)
+            print(json.dumps({
+                "queued": True,
+                "pending_file": str(pending_path),
+                "payload": event_payload,
+            }, ensure_ascii=False))
+            return 0
+        if args.feedback_command == "flush":
+            summary = c.feedback.flush_pending()
+            print(json.dumps(summary, ensure_ascii=False))
             return 0
         if args.feedback_command == "list":
             print(fmt.render_feedback_list(c.feedback.list(task_id=args.task_id, limit=args.limit)))
             return 0
         if args.feedback_command == "stats":
             print(json.dumps(c.feedback.stats(task_id=args.task_id), ensure_ascii=False))
+            return 0
+
+    if args.command == "context":
+        from .context import (
+            clear_last_task_id,
+            get_last_task_id,
+            set_last_task_id,
+        )
+
+        if args.context_command == "set":
+            path = set_last_task_id(args.task_id)
+            print(json.dumps({"task_id": args.task_id, "path": str(path)}, ensure_ascii=False))
+            return 0
+        if args.context_command == "show":
+            value = get_last_task_id()
+            print(json.dumps({"task_id": value}, ensure_ascii=False))
+            return 0 if value is not None else 1
+        if args.context_command == "clear":
+            cleared = clear_last_task_id()
+            print(json.dumps({"cleared": cleared}, ensure_ascii=False))
             return 0
 
     parser.print_help()

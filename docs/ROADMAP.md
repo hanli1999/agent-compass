@@ -2,6 +2,29 @@
 
 ## Shipped
 
+### v0.5.0 — Adopt the first real user (幻梦) (2026-08-15)
+
+Driven by 幻梦's day-one report. The two blockers that kept her from
+installing the remaining hooks are now resolved.
+
+- **`agent_compass.context` module** + `agent-compass context set/show/clear`
+  subcommand. The `last_task_id` pointer lives at
+  `~/.claude/state/last_task_id` (overridable via
+  `AGENT_COMPASS_CLAUDE_STATE_DIR`). `UserPromptSubmit` writes it; `Stop`
+  reads it. State lives outside `data_dir` so a memory-store wipe does
+  not lose the pointer.
+- **`task checkpoint --unspecified`** — `Stop` hook uses this when it
+  has no explicit task id. Resolves via state file → env var →
+  literal `"unspecified"` (with a stderr warning and a placeholder
+  task created on the fly so the checkpoint can still land).
+- **Async `feedback add` by default** + `agent-compass feedback flush`.
+  `PostToolUse` no longer races the sound-reminder hook for the
+  SQLite write. `AGENT_COMPASS_FEEDBACK_SYNC=1` opts back into
+  synchronous mode; `--sync` does the same per-call.
+
+See `CHANGELOG.md`, `docs/claude-code-integration.md`, and
+`hooks/settings.example.json` (rewritten end to end).
+
 ### v0.7.0 — Built-in web adapter and `EXPLORE` action (2026-08-15)
 
 The last gap in the v0.6.0 story: "v3 can demand an outer action, but the
