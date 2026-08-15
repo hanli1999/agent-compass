@@ -16,12 +16,17 @@ walked through the recipe. v0.9.0 closes both.
   table. Done.
 - **`.skills/yinyue-methods/agent-compass/`** — a Claude skill pack that
   bundles the v0.8.0 SDK recipe into a single, installable artefact.
-  Lets any Claude Code adopter drop the four-line loop into their own
-  project without re-reading the docs end to end.
-- **银月 dogfood** — the SDK is integrated into 银月's own host loop and
-  exercised against a real task. The point is not to add new tests; it
-  is to surface integration friction (and to keep the "long-thinking
-  symptom" answer honest) before a third adopter arrives.
+  `SKILL.md` (decision-branch table + when-to-use), `README.md`, two
+  recipes (`host_loop.py` with every branch handled, `hooks_install.py`
+  for the bare installer call), and `verify.py` (the headline test as a
+  runnable script). Done.
+- **银月 dogfood** — the SDK is run against the local install. `verify.py`
+  prints `OK — agent-compass SDK is alive`. `recipes/host_loop.py` with
+  `--complexity 0.9` produces `action: explore` end-to-end on a fresh
+  host. One friction point surfaced: `HostLoop.decide()` does not auto-
+  inject `compass.config.remote_allowed` into `DecisionContext`. Fixed
+  in the recipe wrapper, not at the SDK layer (the explicit-flag design
+  is the documented contract). Done.
 
 ## Shipped
 

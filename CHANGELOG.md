@@ -4,10 +4,17 @@
 
 ### Added
 - **`docs/host-integration.md`** — a 360-line walkthrough that takes a fresh host from `pip install -e .` to a verified loop in one read. Covers install, the four-line host loop, every `DecisionAction` branch handled, the four v3 fields with honest-self-report guidance, web adapter swapping, the cold-start hooks installer, the privacy boundary, the headline verification test, and a troubleshooting table.
+- **`.skills/yinyue-methods/agent-compass/`** — a Claude skill pack that bundles the v0.8.0 SDK recipe into one installable artefact. `SKILL.md` (decision-branch table + when-to-use guidance), `README.md`, `recipes/host_loop.py` (full skeleton, every `DecisionAction` handled), `recipes/hooks_install.py` (bare installer call), and `verify.py` (the headline test as a runnable script). Adopters run `python verify.py` to confirm the SDK is alive before adapting the recipe.
 - **README pointer** — the v0.8.0 host-side helper block now references `docs/host-integration.md` directly instead of "(when it lands)".
+
+### Dogfood (silver-moon's own run, 2026-08-15)
+- `verify.py` reports `OK — agent-compass SDK is alive` against the local install.
+- `recipes/host_loop.py --input "what changed in fastapi 0.118" --complexity 0.9` produces `action: explore`, `reason_codes: [complexity_explore, complexity=0.90, uncertainty=0.00]`. The full EXPLORE branch fires on a fresh host without the operator having to thread any flag by hand, as long as `compass.config.remote_allowed` is True.
+- One friction point surfaced: `HostLoop.decide()` does not auto-inject `compass.config.remote_allowed` into `DecisionContext.remote_allowed`. The recipe's `on_user_prompt` wrapper now does it for the host, so an adopter that forgets the flag still gets EXPLORE on a complex remote task. Not fixed at the SDK layer in this release because the explicit-flag design is the documented contract; the recipe is the safety net.
 
 ### Still honest about
 - The runtime helper is a four-line wrapper, not a turnkey agent. The doc names the things it does *not* do (no ReAct execution, no model-assisted self-evaluator, no cross-session `AutoTracker` persistence).
+- The `HostLoop.decide()` signature requires the host to pass `remote_allowed` (or to read the recipe's wrapper). This is by design — call-site remote is the policy boundary — but it is friction for new adopters. The recipe documents it; a future release may auto-inject.
 - Agent Compass still does not provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
 
 ---
