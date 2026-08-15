@@ -41,5 +41,52 @@
       "action": "consolidate_memory",
       "policy_version": "policy-v2"
     }
+  },
+  {
+    "name": "v3_action_pressure",
+    "v3": true,
+    "input": {"user_input": "still thinking", "consecutive_answer_directly": 3},
+    "expected": {
+      "action": "retrieve_then_act",
+      "policy_version": "policy-v3",
+      "scope": "local"
+    }
+  },
+  {
+    "name": "v3_uncertainty_bypasses_sufficient_context",
+    "v3": true,
+    "input": {"user_input": "what is the cap table for ProjectAI", "uncertainty_score": 0.7, "context_sufficient": true},
+    "expected": {
+      "action": "retrieve",
+      "policy_version": "policy-v3",
+      "scope": "local"
+    }
+  },
+  {
+    "name": "v3_complexity_with_recent_retrieval_does_not_fire",
+    "v3": true,
+    "input": {"user_input": "next step", "complexity_score": 0.9, "recent_action": ["retrieve"], "context_sufficient": true},
+    "expected": {
+      "action": "answer_directly",
+      "policy_version": "policy-v2"
+    }
+  },
+  {
+    "name": "v3_complexity_without_recent_retrieval_fires",
+    "v3": true,
+    "input": {"user_input": "next step", "complexity_score": 0.9, "context_sufficient": true},
+    "expected": {
+      "action": "retrieve_then_act",
+      "policy_version": "policy-v3",
+      "scope": "local"
+    }
+  },
+  {
+    "name": "v3_disabled_degrades_to_v2",
+    "input": {"user_input": "still thinking", "consecutive_answer_directly": 5, "uncertainty_score": 0.9, "context_sufficient": true},
+    "expected": {
+      "action": "answer_directly",
+      "policy_version": "policy-v2"
+    }
   }
 ]

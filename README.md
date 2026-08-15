@@ -34,12 +34,16 @@ feedback and privacy-reviewed memory
 
 ### Policy decisions
 
-The deterministic policy engine returns an action, reason codes, confidence, scope, and policy version. It does not execute tools. A caller may use an LLM for classification, but the final safety gates remain deterministic. The current version is `policy-v2`.
+The deterministic policy engine returns an action, reason codes, confidence, scope, and policy version. It does not execute tools. A caller may use an LLM for classification, but the final safety gates remain deterministic. Two policy versions ship:
+
+- **`policy-v2`** — the default since 0.2.0. Strictly passive: only acts when inputs are already bad.
+- **`policy-v3`** — opt-in since 0.6.0. Adds three "action bias" branches (action pressure, uncertainty threshold, complexity without recent retrieval) that fire *before* the v2 ordering, so a host that loops on silent answers or never reaches for a search on its own gets nudged. See `docs/behavior-policy.md`.
 
 | Action | When it fires |
 | --- | --- |
 | `answer_directly` | local context is sufficient |
-| `retrieve` | time-sensitive, explicit search, or context insufficient (remote gated) |
+| `retrieve` | time-sensitive, explicit search, context insufficient, or v3 uncertainty threshold hit (remote gated) |
+| `retrieve_then_act` | **v3 only.** Action pressure (3 silent answers in a row), or complex task without a recent retrieve. Hosts that don't implement this should map it to `retrieve`. |
 | `ask_user` | ambiguity over the configured threshold |
 | `continue` | task in progress, no interruption |
 | `resume` | task in progress, last turn was interrupted |

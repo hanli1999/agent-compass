@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+### Added
+- **policy-v3, opt-in** (`agent_compass.policy.engine`) — three new "action bias" branches that fire *before* the v2 ASK_USER / RETRIEVE / ANSWER_DIRECTLY order. Designed against the two symptoms a host agent surfaced on 2026-08-15: long thinking turns with no external action, and never reaching for a web search unprompted.
+  - **`action_pressure`** — `consecutive_answer_directly ≥ action_pressure_threshold` (default 3) → `RETRIEVE_THEN_ACT`. Breaks the silent-thinking loop.
+  - **`uncertainty_threshold`** — `uncertainty_score ≥ uncertainty_threshold` (default 0.5) → `RETRIEVE`. The host's own self-report overrides the legacy "I have enough context" branch.
+  - **`complexity_without_recent_retrieval`** — `complexity_score ≥ complexity_threshold` (default 0.6) AND no retrieve-shaped action in `recent_actions[-5:]` → `RETRIEVE_THEN_ACT`. Multi-step work should not be answered from the first scratchpad; a host that has already gathered is left alone.
+- **`DecisionAction.RETRIEVE_THEN_ACT`** — new action meaning "retrieve, then take at least one tool step before answering". Hosts that do not yet honour it can map to `RETRIEVE`; the action is forward-compatible.
+- **`DecisionContext` gains four fields** (all defaulted to neutral so legacy hosts keep working): `complexity_score`, `uncertainty_score`, `consecutive_answer_directly`, `recent_actions`.
+- **`CompassConfig`** gains the v3 gate and three thresholds: `policy_v3_enabled`, `complexity_threshold`, `uncertainty_threshold`, `action_pressure_threshold`. Env var `AGENT_COMPASS_POLICY_V3=true` flips the gate.
+- **`agent-compass decide`** gains `--complexity-score`, `--uncertainty-score`, `--consecutive-answer-directly`, `--recent-action`.
+- **Schema** (`schemas/decision.schema.json`) adds `retrieve_then_act` to the action enum.
+- **Golden tests** (`tests/golden/decisions.json`) gain five v3 fixtures and the runner learns to flip the env var per fixture.
+- **Docs** (`docs/behavior-policy.md`) gain a full v3 section with the rule rationale and three opt-in recipes. `docs/ROADMAP.md` is restructured: v0.6.0 becomes action-bias, v0.7.0 becomes the built-in web adapter.
+
+### Changed
+- The default `Decision.policy_version` stays `policy-v2`. The engine bumps it to `policy-v3` only when it actually consulted a v3 branch. This is the migration contract: every adopter gets to flip the gate independently of their context wiring.
+
+### Still honest about
+- v3 is **opt-in**, not default. v2 has a real semantic ("wait until the inputs are bad enough") that is the right default for a host that already knows its job. v3 is rescue mode.
+- A v3-enabled engine with all new fields at their neutral defaults behaves identically to v2 and reports `policy-v2`. There is no silent upgrade.
+- The three thresholds are informed defaults, not measured constants. They are exposed as plain config keys precisely so you can disagree with them.
+- `_retrieved_recently()` is a substring heuristic on `recent_actions[-5:]`. A host that knows its own actions is encouraged to set `recent_actions` with the exact names it uses.
+- v0.6.0 does **not** ship a built-in web adapter. `RETRIEVE_THEN_ACT` is still wired to local memory only. That is the v0.7.0 work.
+- The privacy detector remains a **baseline**, not a complete DLP product.
+- Agent Compass still does not provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
+
+---
+
+## 0.5.0 (unreleased)
+
+Target: 2026-08-20. Scope unchanged from the earlier roadmap — the hooks-completion work driven by 幻梦's day-one report. No code yet; reserved as the version that will absorb that work when it ships.
+
+---
+
 ## 0.4.0 (2026-08-10)
 
 ### Added

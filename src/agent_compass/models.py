@@ -21,6 +21,10 @@ class DecisionAction(str, Enum):
     RESUME = "resume"
     CONSOLIDATE_MEMORY = "consolidate_memory"
     STOP = "stop"
+    # Added in policy-v3 (opt-in). Forces an outer-action loop: retrieve first,
+    # then take at least one tool step before the caller is allowed to answer.
+    # Hosts that do not honour this action should fall back to RETRIEVE.
+    RETRIEVE_THEN_ACT = "retrieve_then_act"
 
 
 class TaskStatus(str, Enum):
@@ -76,6 +80,12 @@ class DecisionContext:
     interrupted: bool = False
     failure_streak: int = 0
     last_error: str = ""
+    # New in 0.6.0 (policy-v3, opt-in). All four default to neutral so a host
+    # that never sets them keeps v2 behaviour even when v3 is enabled globally.
+    complexity_score: float = 0.0          # 0..1, host's read of "is this multi-step / multi-source?"
+    uncertainty_score: float = 0.0        # 0..1, host's read of "do I actually know the answer?"
+    consecutive_answer_directly: int = 0  # how many ANSWER_DIRECTLY in a row, set by host loop
+    recent_actions: list[str] = field(default_factory=list)  # names of recent tool calls, for "thinking without acting" detection
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
@@ -90,6 +100,9 @@ class Decision:
     confidence: float = 1.0
     requires_user: bool = False
     scope: str = "local"
+    # Default stays policy-v2 so a fresh host that has not opted in keeps the
+    # historical behaviour. The engine bumps this to "policy-v3" only when it
+    # actually consulted a v3-only branch.
     policy_version: str = "policy-v2"
     created_at: str = field(default_factory=utc_now)
     decision_id: str = field(default_factory=lambda: f"dec_{uuid.uuid4().hex[:12]}")

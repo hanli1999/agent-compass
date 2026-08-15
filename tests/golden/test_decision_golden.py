@@ -15,6 +15,8 @@ SNAPSHOTS = Path(__file__).parent / "snapshots"
 
 def _decide_cli(payload: dict, env: dict) -> dict:
     args = [sys.executable, "-m", "agent_compass.cli", "--format", "json", "decide", "--input", payload["user_input"]]
+    if payload.get("context_sufficient"):
+        args.append("--context-sufficient")
     if payload.get("time_sensitive"):
         args.append("--time-sensitive")
     if payload.get("remote"):
@@ -30,18 +32,29 @@ def _decide_cli(payload: dict, env: dict) -> dict:
             args.extend(["--proposed-action", action])
     if "ambiguity" in payload:
         args.extend(["--ambiguous", str(payload["ambiguity"])])
+    if payload.get("complexity_score"):
+        args.extend(["--complexity-score", str(payload["complexity_score"])])
+    if payload.get("uncertainty_score"):
+        args.extend(["--uncertainty-score", str(payload["uncertainty_score"])])
+    if payload.get("consecutive_answer_directly"):
+        args.extend(["--consecutive-answer-directly", str(payload["consecutive_answer_directly"])])
+    for action in payload.get("recent_action", []) or []:
+        args.extend(["--recent-action", action])
     result = subprocess.run(args, capture_output=True, text=True, env=env, check=True)
     return json.loads(result.stdout)
 
 
 def test_decision_golden_snapshots(tmp_path):
-    env = {
+    base_env = {
         **__import__("os").environ,
         "AGENT_COMPASS_DATA_DIR": str(tmp_path),
         "PYTHONPATH": str(ROOT / "src"),
     }
     fixtures = json.loads((Path(__file__).parent / "decisions.json").read_text(encoding="utf-8"))
     for fixture in fixtures:
+        env = dict(base_env)
+        if fixture.get("v3"):
+            env["AGENT_COMPASS_POLICY_V3"] = "true"
         actual = _decide_cli(fixture["input"], env)
         snapshot = fixture["expected"]
         for key, value in snapshot.items():

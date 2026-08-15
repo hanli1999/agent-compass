@@ -70,6 +70,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["new", "ongoing", "interrupted", "ending", "ended"],
         default="new",
     )
+    # policy-v3 (0.6.0+) — opt-in. The CLI passes them through; the engine only
+    # consults them when CompassConfig.policy_v3_enabled is True.
+    decide.add_argument("--complexity-score", type=float, default=0.0,
+                        help="Host's read of task complexity in [0, 1]. v3 only.")
+    decide.add_argument("--uncertainty-score", type=float, default=0.0,
+                        help="Host's read of self-uncertainty in [0, 1]. v3 only.")
+    decide.add_argument("--consecutive-answer-directly", type=int, default=0,
+                        help="How many ANSWER_DIRECTLY decisions in a row. v3 only.")
+    decide.add_argument("--recent-action", action="append", default=[],
+                        help="Name of a recent tool action; may be repeated. v3 only.")
 
     validate = sub.add_parser("validate", help="Validate a JSON document against a bundled schema.")
     _attach_common(validate)
@@ -217,6 +227,10 @@ def main(argv: list[str] | None = None) -> int:
                 retry_count=args.retry_count,
                 proposed_actions=list(args.proposed_action),
                 session_state=SessionState(args.session_state),
+                complexity_score=args.complexity_score,
+                uncertainty_score=args.uncertainty_score,
+                consecutive_answer_directly=args.consecutive_answer_directly,
+                recent_actions=list(args.recent_action),
             )
         )
         print(fmt.render_decision(d.to_dict()))

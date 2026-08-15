@@ -29,6 +29,14 @@ DEFAULT_DESTRUCTIVE_ACTIONS: set[str] = {
 
 DEFAULT_AMBIGUITY_THRESHOLD = 0.7
 DEFAULT_MAX_RETRIES = 3
+# New in 0.6.0 (policy-v3). complexity / uncertainty are interpreted as
+# "this query deserves an outer action" — see docs/behavior-policy.md.
+DEFAULT_COMPLEXITY_THRESHOLD = 0.6
+DEFAULT_UNCERTAINTY_THRESHOLD = 0.5
+# "Action pressure" — how many consecutive ANSWER_DIRECTLY calls before the
+# engine forces a tool step. Three means a host that ignores complexity
+# signals still gets nudged by the third silent answer in a row.
+DEFAULT_ACTION_PRESSURE_THRESHOLD = 3
 
 
 @dataclass
@@ -49,6 +57,13 @@ class CompassConfig:
     # for time-sensitive and destructive markers even if the caller did not set
     # the corresponding boolean flags explicitly.
     auto_detect: bool = True
+    # New in 0.6.0 (policy-v3, opt-in). When False the engine behaves exactly
+    # like policy-v2 even if the host sends v3 fields. This is the gate every
+    # adopter has to flip, on purpose, after reading the migration notes.
+    policy_v3_enabled: bool = False
+    complexity_threshold: float = DEFAULT_COMPLEXITY_THRESHOLD
+    uncertainty_threshold: float = DEFAULT_UNCERTAINTY_THRESHOLD
+    action_pressure_threshold: int = DEFAULT_ACTION_PRESSURE_THRESHOLD
 
     def ensure(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -60,7 +75,8 @@ class CompassConfig:
     @classmethod
     def from_env(cls) -> "CompassConfig":
         remote = os.environ.get("AGENT_COMPASS_ALLOW_REMOTE", "false").lower() in {"1", "true", "yes"}
-        return cls(remote_allowed=remote)
+        v3 = os.environ.get("AGENT_COMPASS_POLICY_V3", "false").lower() in {"1", "true", "yes"}
+        return cls(remote_allowed=remote, policy_v3_enabled=v3)
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> "CompassConfig":
@@ -112,6 +128,15 @@ def _apply_overlay(config: CompassConfig, data: dict) -> CompassConfig:
         config.max_retries = int(policy["max_retries"])
     if "ambiguity_threshold" in policy:
         config.ambiguity_threshold = float(policy["ambiguity_threshold"])
+    # v3 gate and thresholds (0.6.0+)
+    if "policy_v3_enabled" in policy:
+        config.policy_v3_enabled = bool(policy["policy_v3_enabled"])
+    if "complexity_threshold" in policy:
+        config.complexity_threshold = float(policy["complexity_threshold"])
+    if "uncertainty_threshold" in policy:
+        config.uncertainty_threshold = float(policy["uncertainty_threshold"])
+    if "action_pressure_threshold" in policy:
+        config.action_pressure_threshold = int(policy["action_pressure_threshold"])
 
     default_privacy = privacy.get("default_classification")
     if isinstance(default_privacy, str) and default_privacy:
