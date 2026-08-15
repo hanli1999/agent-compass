@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.0 (unreleased)
+
+### Added
+- **`agent_compass.runtime` package** — the host-side glue that turns Agent Compass into a self-driving loop. A fresh host that follows the recipe gets v3 enabled, the four v3 fields auto-tracked, and the `DuckDuckGoAdapter` wired in — no manual wiring required.
+  - **`AutoTracker`** (`runtime.tracker`) — in-memory state for the four v3 fields. The host only has to call `record_action(name)` when it calls a tool, and `record_answer()` when it speaks. `record_action` resets the silent-thinking counter; `record_answer` increments it. `set_complexity` / `set_uncertainty` clamp to `[0, 1]`. `snapshot(complexity=..., uncertainty=...)` returns a frozen `TrackerSnapshot` for `DecisionContext`.
+  - **`HostLoop`** (`runtime.loop`) — wraps a `Compass` with an `AutoTracker`. `decide(user_input, **overrides)` folds the tracker's snapshot into `DecisionContext`, calls the engine, mirrors the decision back into the tracker, and caches the last decision. `record(kind)` routes `kind="answer"` to `record_answer` and everything else to `record_action`. `explain()` returns a JSON-serialisable view of the loop's current state.
+  - **`apply_smart_defaults(compass, *, force=False)`** (`runtime.defaults`) — idempotently flips `policy_v3_enabled` on, sets the three thresholds to their default values, and wires the `DuckDuckGoAdapter` if `remote_allowed`. Returns a `dict` of changes (empty when the call was a no-op). `force=True` overrides any explicit opt-out.
+  - **`build_smart_default_config(base=None, *, remote_allowed=None, data_dir=None)`** — one-call constructor for hosts that want the smart defaults baked in from the start.
+  - **`install_claude_code_hooks(settings_path=None, *, overwrite=False)`** (`runtime.hooks_install`) — writes the five Claude Code hook events (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`) to `~/.claude/settings.json` (or a path the caller picks). Additive by default: existing hooks are preserved, our entries are appended. Returns a `HookInstallReport` so the operator (or `doctor`) can confirm what landed.
+- **The "fresh host has v3 + web" headline test** (`tests/unit/test_runtime.py::test_fresh_host_uses_v3_and_web_out_of_the_box`) — proves the end-to-end story: a host that does the four-line recipe gets action-bias enabled, a web adapter wired, and `EXPLORE` firing on the same inputs that would have been silent under v2.
+
+### Changed
+- Nothing in the existing public API. The runtime is purely additive. A host that did not import `agent_compass.runtime` is unaffected.
+
+### Still honest about
+- The runtime is a *helper*, not a replacement for a real agent loop. It does not run tools; it tells the host what to do and remembers what just happened. A host that never calls `record` after a tool use will still see a silent-thinking counter.
+- `apply_smart_defaults` is a one-shot bootstrap. It does not track "the user manually set v3 back to False after I flipped it on"; the second call is a no-op because the gate is already True. A host that wants v3 off permanently should set it after the call.
+- The hooks installer writes a *starter* set. A power user will want to merge by hand; the installer is for the cold-start case where there is no settings.json yet.
+- The privacy detector is still a **baseline**, not a complete DLP product.
+- Agent Compass still does not provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
+
+---
+
 ## 0.7.0 (2026-08-15)
 
 ### Added

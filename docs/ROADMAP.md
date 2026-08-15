@@ -2,6 +2,37 @@
 
 ## Shipped
 
+### v0.8.0 — Host SDK and default integration (2026-08-15)
+
+The frame for v0.6.0 ("the policy can demand an outer action") and
+v0.7.0 ("the action can leave the machine") was complete, but a
+fresh host that did not know v3 existed would still get v2 by
+default. v0.8.0 closes the integration gap so a new install does
+not have to read three CHANGELOG entries to enjoy the rescue
+mode.
+
+- `agent_compass.runtime.AutoTracker` — in-memory state for the
+  four v3 fields. The host calls `record_action` after a tool call
+  and `record_answer` after a text-only response. The engine reads
+  the rest.
+- `agent_compass.runtime.HostLoop` — wraps a `Compass` with an
+  `AutoTracker`. `decide()` folds the tracker's snapshot into the
+  `DecisionContext` and mirrors the action back; `record()` is
+  the only other method a host loop has to call.
+- `apply_smart_defaults(compass)` — idempotently flips
+  `policy_v3_enabled` on, sets the three thresholds, and wires
+  the `DuckDuckGoAdapter` if `remote_allowed`. Empty diff means
+  no-op.
+- `build_smart_default_config(...)` — one-call constructor for
+  hosts that want the smart defaults baked in from the start.
+- `install_claude_code_hooks(settings_path=...)` — writes the
+  five Claude Code hook events to `~/.claude/settings.json`,
+  additive by default. Cold-start install gets a working hook
+  set with no manual merge.
+
+See `CHANGELOG.md` and the new tests under `tests/unit/test_runtime.py`
+and `tests/unit/test_hooks_install.py`.
+
 ### v0.5.0 — Adopt the first real user (幻梦) (2026-08-15)
 
 Driven by 幻梦's day-one report. The two blockers that kept her from

@@ -18,6 +18,25 @@ agent-compass serve < requests.jsonl
 
 The core runs offline and does not require an API key or a specific LLM.
 
+### Host-side helper (0.8.0+)
+
+A fresh host that wants v3 / web / hooks without reading three CHANGELOG entries can use the `agent_compass.runtime` package:
+
+```python
+from agent_compass import Compass
+from agent_compass.runtime import build_smart_default_config, apply_smart_defaults, HostLoop
+
+compass = Compass(build_smart_default_config(remote_allowed=True))
+apply_smart_defaults(compass)                # v3 on, web adapter wired
+
+loop = HostLoop(compass)
+loop.record("retrieve")                      # after a tool call
+decision = loop.decide("what next")          # auto-folds the tracker snapshot
+loop.record("answer")                        # after a text-only response
+```
+
+`install_claude_code_hooks()` writes the five Claude Code events to `~/.claude/settings.json` for hosts that want a working hook set without a manual merge. See `CHANGELOG.md` and `docs/host-integration.md` (when it lands).
+
 ## What it does
 
 ```text
