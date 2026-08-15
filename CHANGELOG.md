@@ -1,6 +1,48 @@
 # Changelog
 
-## 0.9.3 (unreleased)
+## 0.9.4 (unreleased)
+
+### Added
+- **`agent-compass tracker flush` / `tracker restore`** CLI — exposes
+  the v0.9.3 AutoTracker persistence through the shell so hooks (or any
+  external scheduler) can drive it without a Python API. Defaults to
+  `<data_dir>/state/tracker.json`; override with `--path`. `flush` exits
+  0 on success; `restore` exits 0 when state was loaded, 1 when the
+  file did not exist (no state to restore).
+- **`install_claude_code_hooks` wires tracker persistence automatically**
+  (v0.9.4+). `SessionStart` now appends `agent-compass tracker restore`
+  (after `doctor`) and `Stop` appends `agent-compass tracker flush`
+  (after `feedback flush`). A host that runs the installer once gets
+  cross-session v3 state with no extra wiring. Existing `doctor` /
+  `task checkpoint` / `feedback flush` ordering is preserved.
+
+### Tests
+- `tests/unit/test_hooks_install.py` gains `test_install_wires_tracker_persistence_commands`
+  that reads the written `settings.json` and confirms both
+  `agent-compass tracker restore` and `agent-compass tracker flush`
+  land in the right events.
+- `tests/integration/test_cli.py` gains `test_tracker_flush_then_restore_via_cli`
+  that round-trips the new CLI: flush writes the file, restore reads it
+  back with `schema_version=1` in the payload, restore against a
+  missing file exits 1.
+
+### Still honest about
+- Persistence is opt-in via the hooks installer. `apply_smart_defaults`
+  does not auto-enable it — the host that wants it runs
+  `install_claude_code_hooks()` once, or wires `restore_from` /
+  `flush_to` into their own session lifecycle.
+- The CLI's default path lives inside `data_dir`, which means a
+  memory-store wipe *will* also wipe the tracker state. A host that
+  wants them to be independent should pass `--path` to point at
+  `~/.claude/state/tracker.json` (the same dir the `last_task_id`
+  pointer uses).
+- Agent Compass still does not provide consciousness, subjective
+  experience, true autonomous life, or permission to skip human
+  approval for high-impact actions.
+
+---
+
+## 0.9.3 (2026-08-15)
 
 ### Added
 - **`AutoTracker` persistence** (v0.9.3+, opt-in) — `flush_to(path)` /

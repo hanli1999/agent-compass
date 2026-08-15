@@ -170,3 +170,32 @@ def test_repl_processes_commands(tmp_path):
     assert "agent-compass" in result.stdout
     assert "always test first" in result.stdout
     assert "by_label" in result.stdout
+
+
+def test_tracker_flush_then_restore_via_cli(tmp_path):
+    """v0.9.4+: ``agent-compass tracker flush`` and
+    ``agent-compass tracker restore`` round-trip via the CLI so the
+    SessionStart / Stop hooks do not need a Python API."""
+    # flush creates the file
+    flush_result = _run(["tracker", "flush", "--path", str(tmp_path / "tracker.json")], tmp_path)
+    assert flush_result.returncode == 0
+    payload = json.loads(flush_result.stdout)
+    assert payload["flushed"] is True
+    assert (tmp_path / "tracker.json").exists()
+
+    # restore without prior flush-state == exit 1 (no state to load)
+    no_state = _run(
+        ["tracker", "restore", "--path", str(tmp_path / "no-such-file.json")],
+        tmp_path,
+    )
+    assert no_state.returncode == 1
+
+    # restore with the file we just wrote == exit 0
+    restore_result = _run(
+        ["tracker", "restore", "--path", str(tmp_path / "tracker.json")],
+        tmp_path,
+    )
+    assert restore_result.returncode == 0
+    payload = json.loads(restore_result.stdout)
+    assert payload["restored"] is True
+    assert payload["state"]["schema_version"] == 1

@@ -129,3 +129,24 @@ def test_install_report_is_json_serialisable(tmp_path):
     parsed = json.loads(blob)
     assert "settings_path" in parsed
     assert "events_installed" in parsed
+
+
+def test_install_wires_tracker_persistence_commands(tmp_path):
+    """v0.9.4+: SessionStart runs tracker restore and Stop runs
+    tracker flush so the v3 AutoTracker survives the session."""
+    target = tmp_path / "settings.json"
+    install_claude_code_hooks(settings_path=target)
+    data = _read(target)
+    all_commands = [
+        h.get("command")
+        for entry in data["hooks"]["SessionStart"]
+        for h in entry.get("hooks", [])
+        if h.get("type") == "command"
+    ] + [
+        h.get("command")
+        for entry in data["hooks"]["Stop"]
+        for h in entry.get("hooks", [])
+        if h.get("type") == "command"
+    ]
+    assert "agent-compass tracker restore" in all_commands
+    assert "agent-compass tracker flush" in all_commands

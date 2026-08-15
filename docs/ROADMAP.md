@@ -2,6 +2,24 @@
 
 ## In progress
 
+### v0.9.4 — CLI hooks wiring for tracker persistence (2026-08-15)
+
+v0.9.3 shipped the `AutoTracker.flush_to` / `restore_from` primitives
+but left the host to wire them into SessionStart / Stop manually.
+v0.9.4 closes that gap so a host that runs `install_claude_code_hooks()`
+once gets cross-session v3 state with no extra wiring.
+
+- New CLI: `agent-compass tracker flush --path <file>` and
+  `agent-compass tracker restore --path <file>`. Defaults to
+  `<data_dir>/state/tracker.json`. `restore` exits 1 when the file
+  does not exist.
+- `install_claude_code_hooks` appends `tracker restore` to
+  SessionStart (after `doctor`) and `tracker flush` to Stop (after
+  `feedback flush`). Existing ordering preserved.
+- 2 new tests: hooks-install test that reads back the written
+  `settings.json`, and an end-to-end CLI round-trip.
+- 286 tests pass.
+
 ### v0.9.3 — AutoTracker persistence (2026-08-15)
 
 v0.8.0's "what does not land" list included *"A persistence layer for

@@ -12,7 +12,9 @@ The five events match the names Claude Code emits:
 
 * ``SessionStart`` — runs ``agent-compass doctor`` so the host can
   surface a stale-data-dir warning before any policy decision is
-  made.
+  made, then ``agent-compass tracker restore`` so the v3 AutoTracker
+  picks up the silent-thinking counter and recent-actions window
+  from the last session.
 * ``UserPromptSubmit`` — runs ``agent-compass decide --input "$PROMPT"``
   and writes the new ``last_task_id`` pointer so the eventual
   ``Stop`` hook knows which task to checkpoint.
@@ -23,7 +25,9 @@ The five events match the names Claude Code emits:
   mode. The call is non-blocking; the queue is flushed by the
   ``Stop`` hook.
 * ``Stop`` — runs ``agent-compass task checkpoint --unspecified``,
-  then ``agent-compass feedback flush``.
+  then ``agent-compass feedback flush``, then
+  ``agent-compass tracker flush`` so the v3 state survives the
+  restart.
 
 The function returns a small report so an operator (or the
 ``doctor`` subcommand) can confirm what was installed.
@@ -55,7 +59,11 @@ _EVENT_COMMANDS: dict[str, list[dict[str, Any]]] = {
     "SessionStart": [
         {
             "matcher": "startup|resume",
-            "hooks": [{"type": "command", "command": "agent-compass doctor"}],
+            "hooks": [
+                {"type": "command", "command": "agent-compass doctor"},
+                # v0.9.4+: pick up v3 state from the previous session.
+                {"type": "command", "command": "agent-compass tracker restore"},
+            ],
         },
     ],
     "UserPromptSubmit": [
@@ -113,6 +121,8 @@ _EVENT_COMMANDS: dict[str, list[dict[str, Any]]] = {
                     "type": "command",
                     "command": "agent-compass feedback flush",
                 },
+                # v0.9.4+: persist v3 state for the next session.
+                {"type": "command", "command": "agent-compass tracker flush"},
             ],
         },
     ],

@@ -199,6 +199,21 @@ def build_parser() -> argparse.ArgumentParser:
     context_show = context_sub.add_parser("show")
     context_clear = context_sub.add_parser("clear")
 
+    # v0.9.4+ — v3 AutoTracker persistence. SessionStart runs restore
+    # to pick up the silence counter and recent-actions window from
+    # the last session; Stop runs flush to persist them. The host
+    # opts in via ``--path`` (defaults to ``<data_dir>/state/tracker.json``).
+    tracker = sub.add_parser("tracker",
+                             help="Persist the v3 AutoTracker state across sessions.")
+    _attach_common(tracker)
+    tracker_sub = tracker.add_subparsers(dest="tracker_command", required=True)
+    tracker_flush = tracker_sub.add_parser("flush")
+    tracker_flush.add_argument("--path", default=None,
+                               help="destination file (default: <data_dir>/state/tracker.json)")
+    tracker_restore = tracker_sub.add_parser("restore")
+    tracker_restore.add_argument("--path", default=None,
+                                 help="source file (default: <data_dir>/state/tracker.json)")
+
     return parser
 
 
@@ -481,6 +496,29 @@ def main(argv: list[str] | None = None) -> int:
             cleared = clear_last_task_id()
             print(json.dumps({"cleared": cleared}, ensure_ascii=False))
             return 0
+
+    if args.command == "tracker":
+        from pathlib import Path
+
+        from .runtime import AutoTracker
+
+        c = _compass_from_args(args)
+        default_path = Path(c.config.data_dir) / "state" / "tracker.json"
+        path = Path(args.path) if args.path else default_path
+
+        if args.tracker_command == "flush":
+            tracker = AutoTracker()
+            tracker.flush_to(path)
+            print(json.dumps({"flushed": True, "path": str(path)}, ensure_ascii=False))
+            return 0
+        if args.tracker_command == "restore":
+            tracker = AutoTracker()
+            loaded = tracker.restore_from(path)
+            print(json.dumps(
+                {"restored": loaded, "path": str(path), "state": tracker.to_dict()},
+                ensure_ascii=False,
+            ))
+            return 0 if loaded else 1
 
     parser.print_help()
     return 0

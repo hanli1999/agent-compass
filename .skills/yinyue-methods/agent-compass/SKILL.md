@@ -182,6 +182,15 @@ crash mid-flush cannot leave the host with a half-written state.
 choices are the Stop hook (cheap, one write per session) or every
 N records (more granular, more I/O).
 
+### CLI hooks (v0.9.4+)
+
+`install_claude_code_hooks()` appends `agent-compass tracker restore`
+to `SessionStart` (after `doctor`) and `agent-compass tracker flush`
+to `Stop` (after `feedback flush`). A host that runs the installer
+once gets cross-session v3 state with no extra wiring. Override the
+default path with `--path` on either command (defaults to
+`<data_dir>/state/tracker.json`).
+
 ## Related
 
 - `docs/host-integration.md` — the long-form walkthrough that this
