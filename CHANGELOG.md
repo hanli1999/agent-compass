@@ -1,6 +1,28 @@
 # Changelog
 
-## 0.9.1 (unreleased)
+## 0.9.2 (unreleased)
+
+### Added
+- **REPL v3 commands** (`agent_compass.repl.CompassRepl`) — interactive v3 state inspection. The REPL auto-wires a `HostLoop` when `compass.config.policy_v3_enabled` is on; v2 sessions skip the wiring entirely and report `v3 not enabled` for the v3 commands.
+  - `state` — JSON view of the tracker snapshot (silent-thinking counter, recent actions window, complexity / uncertainty scores) plus the last decision.
+  - `record <name|answer>` — record a tool call (any string) or an `answer`. Mirrors the host-loop's `record()` semantics.
+  - `set_complexity <0..1>` and `set_uncertainty <0..1>` — clamp and persist the host-reported score on the tracker.
+  - `reset_tracker` — drop everything back to neutral.
+  - `decide` gains `--complexity`, `--uncertainty`, `--consecutive-answer`, `--recent-action` for one-off v3 overrides. When v3 is wired, `decide` routes through the loop so the tracker's snapshot is folded into the `DecisionContext`.
+- **Backward compat** — v2 REPL sessions see no `state` / `record` / `set_complexity` / `set_uncertainty` / `reset_tracker` in `help`. The 13 pre-existing REPL tests still pass.
+
+### Tests
+- `tests/unit/test_repl.py` gains 12 tests covering v3 REPL: friendly v3-not-enabled error in v2 sessions, `state` JSON shape, three-`answer` `record` triggering `action_pressure`, `record <tool>` resetting silence, complexity / uncertainty persistence and clamping, `reset_tracker`, `help` listing v3 commands, end-to-end EXPLORE on `set_complexity 0.9` + `decide`.
+
+### Still honest about
+- REPL v3 commands only work when the underlying compass has v3 enabled. The CLI subcommand `agent-compass repl` is unchanged — set `AGENT_COMPASS_POLICY_V3=true` or `apply_smart_defaults(compass)` before launching to opt in.
+- `record <name>` accepts any string as the action name. The tracker does not validate against an allow-list; the engine is permissive on purpose so a host can add new tool names without SDK changes.
+- The in-memory tracker still does not persist across REPL sessions. Persistence is the host's job (and is tracked in the v0.8.0 "what does not land" list).
+- Agent Compass still does not provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
+
+---
+
+## 0.9.1 (2026-08-15)
 
 ### Changed
 - **`HostLoop.decide()` auto-injects `remote_allowed`** from `compass.config.remote_allowed` into the `DecisionContext` when the caller did not pass it in `overrides`. A host that forgets the flag now gets `EXPLORE` on a complex remote task instead of being silently downgraded to `RETRIEVE_THEN_ACT`. Callers can still override with `remote_allowed=False` (e.g. on a transient network outage) — the auto-inject only fires when the caller did not specify.

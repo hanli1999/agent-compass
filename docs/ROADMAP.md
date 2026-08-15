@@ -2,6 +2,25 @@
 
 ## In progress
 
+### v0.9.2 — REPL v3 commands (2026-08-15)
+
+v0.8.0 shipped the SDK; v0.9.1 closed the `remote_allowed` friction;
+v0.9.2 makes the SDK debuggable from the existing REPL session.
+
+- `agent_compass.repl.CompassRepl` auto-wires a `HostLoop` when v3 is
+  enabled. New commands: `state` (JSON tracker snapshot), `record
+  <name|answer>` (action or silence), `set_complexity <0..1>` /
+  `set_uncertainty <0..1>` (clamped), `reset_tracker`. `decide` routes
+  through the loop in v3 mode and gains `--complexity`,
+  `--uncertainty`, `--consecutive-answer`, `--recent-action` for
+  one-off overrides.
+- Backward compat: v2 REPL sessions skip the wiring. The 13 pre-existing
+  REPL tests still pass; the v3 commands return `v3 not enabled` from a
+  v2 session instead of crashing.
+- 12 new tests in `tests/unit/test_repl.py` cover the v3 commands end
+  to end (including EXPLORE on `set_complexity 0.9` + `decide`).
+- 278 tests pass.
+
 ### v0.9.1 — Auto-inject `remote_allowed` (2026-08-15)
 
 v0.9.0 dogfood surfaced real friction: `HostLoop.decide()` did not

@@ -25,7 +25,7 @@ from .storage.sqlite import SQLiteStore
 from .tasks.service import TaskService, FeedbackService
 from .tasks.state_machine import TaskStateMachine, Checkpoint, IdempotencyRegistry
 
-__version__ = "0.9.1"
+__version__ = "0.9.2"
 
 
 class Compass:
