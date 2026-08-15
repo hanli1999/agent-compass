@@ -3,6 +3,12 @@ policy:
   retrieval:
     local_first: true
     remote_requires_explicit_or_high_confidence: true
+    # v0.7.0+ — web adapter knobs. Only consulted by the built-in
+    # DuckDuckGoAdapter / TavilyAdapter / WebFetchAdapter. The core
+    # policy engine never reads them.
+    web_search_timeout_s: 3.0
+    web_fetch_timeout_s: 8.0
+    web_retries: 1
   clarification:
     ask_on_ambiguous_goal: true
     ask_on_irreversible_action: true
@@ -13,3 +19,9 @@ policy:
       - publish
       - send_external_message
       - modify_production
+  # v0.6.0+ — opt-in to policy-v3. The four DecisionContext fields
+  # below are honoured by the engine only when this is true.
+  policy_v3_enabled: true
+  complexity_threshold: 0.6
+  uncertainty_threshold: 0.5
+  action_pressure_threshold: 3

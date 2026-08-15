@@ -44,6 +44,7 @@ The deterministic policy engine returns an action, reason codes, confidence, sco
 | `answer_directly` | local context is sufficient |
 | `retrieve` | time-sensitive, explicit search, context insufficient, or v3 uncertainty threshold hit (remote gated) |
 | `retrieve_then_act` | **v3 only.** Action pressure (3 silent answers in a row), or complex task without a recent retrieve. Hosts that don't implement this should map it to `retrieve`. |
+| `explore` | **v0.7.0+, v3 only.** Complex or uncertain task, no recent `web_search`, and `remote_allowed` is set. Means "do a ReAct-style loop: web_search → inspect → maybe web_fetch → answer". Hosts that don't implement ReAct should map it to `retrieve_then_act`. |
 | `ask_user` | ambiguity over the configured threshold |
 | `continue` | task in progress, no interruption |
 | `resume` | task in progress, last turn was interrupted |
@@ -84,6 +85,28 @@ body = compass.memory.get(result.items[0].memory_id)["content"]   # on demand
 ```
 
 Everything withheld is counted and reported — a digest that silently drops four matches reads exactly like a complete answer. Any source with a `name` and a `retrieve(query)` method can join the fan-out, and one that raises is recorded and skipped rather than failing the call. See `docs/retrieval-orchestration.md`.
+
+### Built-in web adapters (0.7.0+)
+
+Three web adapters ship in `agent_compass.adapters` and plug into `RetrievalOrchestrator` the same way the local store does:
+
+- `DuckDuckGoAdapter` — stdlib `urllib` HTML scrape of `duckduckgo.com/html/`, no API key, the default.
+- `TavilyAdapter` — JSON API at `api.tavily.com`, reads `TAVILY_API_KEY` from the env.
+- `WebFetchAdapter` — URL → text + summary, conservative HTML extraction.
+
+All three honour `CompassConfig.remote_allowed` and run every response through `PrivacyBoundary.assert_safe_for_remote` before summarising. PII is redacted, a row whose body contains a *secret* is dropped silently, and `WebFetchAdapter` raises rather than returning a page that contained a secret. Timeouts default to 3 s search / 8 s fetch / 1 retry.
+
+Wiring one in is one line:
+
+```python
+from agent_compass import Compass, CompassConfig
+from agent_compass.adapters import DuckDuckGoAdapter
+
+compass = Compass(CompassConfig(remote_allowed=True))
+compass.retrieval.retrievers.append(DuckDuckGoAdapter(compass.config))
+```
+
+The `EXPLORE` action is the one that pulls the trigger — see `docs/behavior-policy.md` for the decision order.
 
 ## CLI reference
 

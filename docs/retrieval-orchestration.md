@@ -167,3 +167,51 @@ bound has to hold even when the summariser is unavailable.
 `context_cap` in the scoring layer was set to 0.5 rather than 0.75 after an
 A/B run over a real 40-document store: five queries at top-7 produced zero
 recall difference between the two, so the tighter cap wins the tie-break.
+
+## Web adapters (0.7.0+)
+
+The same `Retriever` protocol that the local store implements is also
+implemented by three built-in web adapters. They are *opt-in by config*:
+without `CompassConfig.remote_allowed=True` they raise
+`RemoteNotAllowedError`, the orchestrator records it as a per-source error,
+and local recall keeps working. The same degradation rule applies: a
+missing flag must not take down the local store.
+
+| Adapter | Backend | API key | When to use |
+| --- | --- | --- | --- |
+| `DuckDuckGoAdapter` | `duckduckgo.com/html/` HTML scrape | none | default; no external account needed |
+| `TavilyAdapter` | `api.tavily.com` JSON | `TAVILY_API_KEY` | stable, low-variance output for ReAct |
+| `WebFetchAdapter` | direct `http(s)://` GET | none | pull a single URL into the same `RetrievedItem` shape |
+
+All three share the same privacy and timeout contract:
+
+- **Privacy**: every response is run through `PrivacyBoundary.assert_safe_for_remote`
+  before summarisation. PII is redacted, a row whose body contains a *secret*
+  is dropped, and `WebFetchAdapter` raises rather than returning a page
+  whose body contained a secret. The detector is the same baseline the
+  local store uses, not a complete DLP product.
+- **Timeouts**: 3 s for search, 8 s for fetch, 1 retry by default.
+  Configurable via `policy.retrieval.web_search_timeout_s`,
+  `web_fetch_timeout_s`, `web_retries`. The defaults are deliberately
+  conservative: a flaky network must not stall the host.
+- **No SDKs**: only `urllib` from the standard library. The core stays
+  dependency-free, so the web adapters are an *opt-in* import cost.
+
+Wiring them in is one line each:
+
+```python
+from agent_compass import Compass, CompassConfig
+from agent_compass.adapters import DuckDuckGoAdapter, TavilyAdapter, WebFetchAdapter
+
+compass = Compass(CompassConfig(remote_allowed=True))
+compass.retrieval.retrievers.append(DuckDuckGoAdapter(compass.config))
+# compass.retrieval.retrievers.append(TavilyAdapter(compass.config))
+# compass.retrieval.retrievers.append(WebFetchAdapter(compass.config))
+```
+
+`EXPLORE` is the action that pulls the trigger. The policy engine emits
+`EXPLORE` when v3 is enabled, the task is complex or uncertain, the host
+has not yet asked the open web, and `remote_allowed` is set on both the
+config and the caller's `DecisionContext`. A host that does not implement
+ReAct should map `EXPLORE → RETRIEVE_THEN_ACT`. See `docs/behavior-policy.md`
+for the full decision order.

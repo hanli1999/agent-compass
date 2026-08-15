@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+### Added
+- **Built-in web adapters** (`agent_compass.adapters.web_search`, `agent_compass.adapters.web_fetch`).
+  - **`DuckDuckGoAdapter`** — stdlib `urllib` HTML scrape of `duckduckgo.com/html/`. No API key, no SDK. Default backend.
+  - **`TavilyAdapter`** — JSON API at `api.tavily.com`. Reads `TAVILY_API_KEY` from the env. Recommended for stable, low-variance output.
+  - **`WebFetchAdapter`** — URL → text + summary. Conservative HTML extraction, no JS, no DOM rebuilding.
+  - All three implement the existing `Retriever` protocol directly, so they slot into `RetrievalOrchestrator` like `CallableRetriever` does. No wrapper.
+  - All three honour `CompassConfig.remote_allowed`. Without it the adapter raises `RemoteNotAllowedError` and the orchestrator records it as a per-source error — exactly like the existing per-source error path. A missing flag never takes down local recall.
+  - All three run every response through `PrivacyBoundary.assert_safe_for_remote`. PII is redacted; a row whose body contains a *secret* (private key, JWT, bearer, API key, password, SSH key) is dropped silently rather than passed through. A `WebFetchAdapter` that pulls a secret out of a page raises `WebAdapterError` instead of returning a partial result.
+  - Timeouts: 3 s search / 8 s fetch / 1 retry by default. Configurable via `policy.retrieval.web_search_timeout_s`, `web_fetch_timeout_s`, `web_retries`.
+- **`DecisionAction.EXPLORE = "explore"`** — a new action meaning "do a ReAct-style loop: web_search → inspect → maybe web_fetch → answer". Hosts that do not implement ReAct should map `EXPLORE → RETRIEVE_THEN_ACT`. The action is forward-compatible.
+- **EXPLORE branch in `PolicyEngine`** (v0.7.0+). Fires *before* the B/C v3 branches, so when remote is allowed and the host has not yet searched, "go to the web" supersedes local `RETRIEVE` / `RETRIEVE_THEN_ACT`. Two gates keep it tight:
+  1. `remote_allowed` is set on **both** the config and the caller's `DecisionContext`.
+  2. `recent_actions[-5:]` shows no `web_search` entry.
+- **Schema** (`schemas/decision.schema.json`) adds `explore` to the action enum.
+- **Golden tests** gain four EXPLORE fixtures: forced on complexity with remote, forced on uncertainty with remote, suppressed by recent `web_search`, downgraded to `retrieve_then_act` when remote flag is missing.
+- **Unit tests** (`tests/unit/test_web_adapters.py`, `tests/unit/test_explore_branch.py`) cover the adapters with monkey-patched HTTP (no real network in CI) and the EXPLORE branch's gating conditions.
+
+### Changed
+- The v3 branch order is now A → D → B → C: pressure beats the web beats self-doubt beats planning. EXPLORE sits between pressure and the local retrieve branches. A v3-enabled engine without remote still hits B and C unchanged; an engine with remote that has not yet searched hits EXPLORE first.
+- `CompassConfig` gains three new fields (`web_search_timeout_s`, `web_fetch_timeout_s`, `web_retries`). They are only consulted by the new adapters — the core policy engine never reads them.
+
+### Still honest about
+- EXPLORE is **opt-in via v3** (`policy_v3_enabled=True`). v2 is the default. A v2 engine never emits EXPLORE.
+- The DDG HTML endpoint is unofficial. If DDG returns a captcha / 202 page the parser will see no results and the adapter raises `WebAdapterError`. That is recorded as a per-source failure by the orchestrator; the host falls back to local memory or to the Tavily backend.
+- The bundled privacy detector is a **baseline**, not a complete DLP product. A page whose body contains something the detector does not recognise is summarised as-is.
+- The summariser is still extractive (the same one used by the local store). It picks sentences; it does not understand them.
+- A v0.7.0 adapter without `remote_allowed` does nothing. The flag is intentionally a global opt-in.
+- Agent Compass still does not provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
+
+---
+
 ## 0.6.0 (unreleased)
 
 ### Added

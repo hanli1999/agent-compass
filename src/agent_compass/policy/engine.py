@@ -36,19 +36,31 @@ class PolicyEngine:
     visible difference is the ``policy_version`` string on the returned
     Decision.
 
-    v3 additional branches (inserted between step 5 and step 6 of v2):
+    v3 additional branches (inserted between step 5 and step 6 of v2, in
+    this order):
 
     A. ``consecutive_answer_directly >= action_pressure_threshold`` ->
        ``RETRIEVE_THEN_ACT`` ("you have been silent for too long, take an action")
+    D. ``(complexity >= threshold OR uncertainty >= threshold)`` AND no
+       ``web_search`` in ``recent_actions[-5:]`` AND ``remote_allowed`` ->
+       ``EXPLORE`` (this needs outside information; do a ReAct-style
+       web_search -> inspect -> maybe web_fetch -> answer loop). v0.7.0+.
     B. ``uncertainty_score >= uncertainty_threshold`` ->
-       ``RETRIEVE`` (your self-report says you don't actually know)
+       ``RETRIEVE`` (your self-report says you don't actually know).
+       Fires only when EXPLORE did not (offline, or recent web_search).
     C. ``complexity_score >= complexity_threshold`` AND no retrieval in
        ``recent_actions`` -> ``RETRIEVE_THEN_ACT`` (this is multi-step, gather
-       first, then act)
+       first, then act). Fires only when EXPLORE did not (offline).
 
-    If multiple branches fire, the one listed first wins. This mirrors the
-    "action pressure beats self-doubt beats planning" ordering, which is what
-    the dead-loop symptom actually calls for.
+    The order is A → D → B → C: *pressure beats the web beats self-doubt
+    beats planning*. Pressure means "do anything" — do not even pause to
+    ask whether a search is needed. The web supersedes local retrieve
+    when remote is actually allowed and the host has not yet searched.
+    Self-doubt and planning only fire when the web path is unavailable.
+
+    If multiple branches fire, the one listed first wins. ``EXPLORE`` is
+    the only v3 branch that *requires* ``remote_allowed``; the other
+    three keep working offline.
     """
 
     def __init__(self, config: CompassConfig | None = None):
@@ -109,16 +121,55 @@ class PolicyEngine:
                     policy_version="policy-v3",
                 )
 
+            # D. EXPLORE — v0.7.0+. Fires *before* B and C because it is
+            #    the superset: when remote is allowed and the host has
+            #    not yet asked the open web, "go to the web" subsumes
+            #    "retrieve" and "retrieve_then_act". Two gates keep it
+            #    tight:
+            #      1. remote is actually allowed (config + caller flag);
+            #      2. the recent-action window shows no web_search. A host
+            #         that already searched this turn is left alone.
+            threshold_uncertainty = self.config.uncertainty_threshold
+            threshold_complexity = self.config.complexity_threshold
+            wants_explore = (
+                context.complexity_score >= threshold_complexity
+                or context.uncertainty_score >= threshold_uncertainty
+            )
+            if (
+                wants_explore
+                and not self._searched_recently(context.recent_actions)
+                and context.remote_allowed
+                and self.config.remote_allowed
+            ):
+                code = (
+                    "complexity_explore"
+                    if context.complexity_score >= threshold_complexity
+                    else "uncertainty_explore"
+                )
+                return Decision(
+                    DecisionAction.EXPLORE,
+                    [
+                        code,
+                        f"complexity={context.complexity_score:.2f}",
+                        f"uncertainty={context.uncertainty_score:.2f}",
+                    ],
+                    0.9,
+                    False,
+                    "remote",
+                    policy_version="policy-v3",
+                )
+
             # B. self-reported uncertainty — bypass the legacy "if sufficient
             #    context" branch. The host already told us it does not have
-            #    what it needs.
-            if context.uncertainty_score >= self.config.uncertainty_threshold:
+            #    what it needs. Fires only when EXPLORE did not (i.e. remote
+            #    not allowed, or recent web_search in the window).
+            if context.uncertainty_score >= threshold_uncertainty:
                 scope = "remote" if (context.remote_allowed and self.config.remote_allowed) else "local"
                 return Decision(
                     DecisionAction.RETRIEVE,
                     [
                         "uncertainty_threshold",
-                        f"uncertainty_score={context.uncertainty_score:.2f}>={self.config.uncertainty_threshold}",
+                        f"uncertainty_score={context.uncertainty_score:.2f}>={threshold_uncertainty}",
                     ],
                     0.88,
                     False,
@@ -127,8 +178,10 @@ class PolicyEngine:
                 )
 
             # C. complexity without recent retrieval — multi-step work should
-            #    not be answered on the first internal scratchpad.
-            threshold_complexity = self.config.complexity_threshold
+            #    not be answered on the first internal scratchpad. Fires
+            #    only when EXPLORE did not (offline mode) and the host has
+            #    not already gathered (any flavor of retrieve/search/fetch
+            #    in the last 5 actions).
             if (
                 context.complexity_score >= threshold_complexity
                 and not self._retrieved_recently(context.recent_actions)
@@ -215,5 +268,20 @@ class PolicyEngine:
         for name in recent_actions[-5:]:
             lowered = name.lower()
             if "retrieve" in lowered or "search" in lowered or "fetch" in lowered:
+                return True
+        return False
+
+    @staticmethod
+    def _searched_recently(recent_actions: list[str]) -> bool:
+        """Whether the host has called a *web* search in its last few steps.
+
+        Stricter than :meth:`_retrieved_recently` — it ignores plain
+        memory ``retrieve`` and only counts entries whose name contains
+        ``"web_search"``. ``EXPLORE`` should not fire if the host just
+        ran a web search on its own; that would be a redundant
+        suggestion. The default window is 5 actions.
+        """
+        for name in recent_actions[-5:]:
+            if "web_search" in name.lower():
                 return True
         return False

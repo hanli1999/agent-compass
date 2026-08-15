@@ -2,6 +2,34 @@
 
 ## Shipped
 
+### v0.7.0 — Built-in web adapter and `EXPLORE` action (2026-08-15)
+
+The last gap in the v0.6.0 story: "v3 can demand an outer action, but the
+local store is the only place the action can go." v0.7.0 closes that loop
+by shipping web adapters and a new `EXPLORE` action that means "do a
+ReAct-style loop: web_search → inspect → maybe web_fetch → answer".
+
+- `agent_compass.adapters.web_search.DuckDuckGoAdapter` — stdlib `urllib`
+  HTML scrape of `duckduckgo.com/html/`, no API key, default backend.
+- `agent_compass.adapters.web_search.TavilyAdapter` — JSON API at
+  `api.tavily.com`, reads `TAVILY_API_KEY` from the env.
+- `agent_compass.adapters.web_fetch.WebFetchAdapter` — URL → text +
+  summary, conservative HTML extraction.
+- All three implement the `Retriever` protocol directly, honour
+  `CompassConfig.remote_allowed`, apply `PrivacyBoundary.assert_safe_for_remote`
+  to every response, and time out fast (3 s search / 8 s fetch / 1 retry).
+- `DecisionAction.EXPLORE = "explore"` — fires before B/C of the v3
+  ordering when remote is allowed and the host has not yet searched.
+- The v3 branch order is now A → D → B → C: pressure beats the web beats
+  self-doubt beats planning.
+- Privacy boundary integration: a row whose body contains a *secret* is
+  dropped silently; `WebFetchAdapter` raises `WebAdapterError` rather
+  than returning a partial page.
+
+See `CHANGELOG.md` and `docs/retrieval-orchestration.md`.
+
+---
+
 ### v0.4.0 — Activation-v2 scoring and bounded retrieval (2026-08-10)
 
 Not originally on this roadmap. It jumped the queue because it turned out to
@@ -138,6 +166,9 @@ migration script.
 ---
 
 ## v0.7.0 — Built-in web adapter and `EXPLORE` action
+
+*Shipped 2026-08-15. See "Shipped" section above. The plan that follows is
+kept for historical context.*
 
 Target: 2026-10. Once v0.6.0 ships, the policy can already demand a retrieve
 that hits *something*. Today "something" is only the local memory store; v0.7.0

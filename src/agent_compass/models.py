@@ -25,6 +25,12 @@ class DecisionAction(str, Enum):
     # then take at least one tool step before the caller is allowed to answer.
     # Hosts that do not honour this action should fall back to RETRIEVE.
     RETRIEVE_THEN_ACT = "retrieve_then_act"
+    # Added in policy-v3 + web adapter (opt-in). Means "do a ReAct-style loop:
+    # web_search -> inspect -> maybe web_fetch -> answer". Hosts that do not
+    # implement ReAct should map EXPLORE to RETRIEVE_THEN_ACT. EXPLORE is the
+    # only new action that *requires* `remote_allowed`; the other v3 branches
+    # keep working offline.
+    EXPLORE = "explore"
 
 
 class TaskStatus(str, Enum):

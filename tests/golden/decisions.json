@@ -88,5 +88,44 @@
       "action": "answer_directly",
       "policy_version": "policy-v2"
     }
+  },
+  {
+    "name": "v3_explore_fires_on_complexity_with_remote",
+    "v3": true,
+    "input": {"user_input": "what changed in fastapi 0.118", "complexity_score": 0.8, "remote": true, "context_sufficient": true},
+    "expected": {
+      "action": "explore",
+      "policy_version": "policy-v3",
+      "scope": "remote"
+    }
+  },
+  {
+    "name": "v3_explore_fires_on_uncertainty_with_remote",
+    "v3": true,
+    "input": {"user_input": "what changed in fastapi 0.118", "uncertainty_score": 0.7, "remote": true, "context_sufficient": true},
+    "expected": {
+      "action": "explore",
+      "policy_version": "policy-v3",
+      "scope": "remote"
+    }
+  },
+  {
+    "name": "v3_explore_suppressed_by_recent_web_search",
+    "v3": true,
+    "input": {"user_input": "follow up", "complexity_score": 0.8, "remote": true, "context_sufficient": true, "recent_action": ["web_search"]},
+    "expected": {
+      "action": "answer_directly",
+      "policy_version": "policy-v2"
+    }
+  },
+  {
+    "name": "v3_explore_requires_remote_flag",
+    "v3": true,
+    "input": {"user_input": "what changed in fastapi 0.118", "complexity_score": 0.8, "context_sufficient": true},
+    "expected": {
+      "action": "retrieve_then_act",
+      "policy_version": "policy-v3",
+      "scope": "local"
+    }
   }
 ]

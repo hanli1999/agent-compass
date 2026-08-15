@@ -1,11 +1,13 @@
 # Behavior Policy (v2 + v3)
 
 Agent Compass ships two policy versions. **v2** is the default and unchanged since
-0.2.0; **v3** is opt-in since 0.6.0 and adds three "action-bias" branches so an
+0.2.0; **v3** is opt-in since 0.6.0 and adds "action-bias" branches so an
 agent does not get stuck silently answering when the work is actually complex or
-uncertain. The version reported on a `Decision` is whatever rule fired it; a
-v3 engine that only saw legacy inputs reports `policy-v2` and behaves
-identically.
+uncertain. As of 0.7.0, one of those branches is `EXPLORE` — it escalates to a
+web search + ReAct loop when the task looks complex or uncertain and the host
+has not yet asked the open web. The version reported on a `Decision` is whatever
+rule fired it; a v3 engine that only saw legacy inputs reports `policy-v2` and
+behaves identically.
 
 ## Decision order
 
@@ -25,17 +27,14 @@ The engine evaluates the rules in order; the first match wins.
 
 ### v3 additional branches (opt-in via `policy_v3_enabled`, since 0.6.0)
 
-These slots in *between* steps 5 and 6 of the v2 order:
+These slots in *between* steps 5 and 6 of the v2 order, in this sequence:
 
 - **`A. action_pressure`** — `consecutive_answer_directly ≥ action_pressure_threshold` (default 3) → `retrieve_then_act`. If the host has produced three silent answers in a row the engine breaks the loop and demands an outer action before the next prompt.
-- **`B. uncertainty_threshold`** — `uncertainty_score ≥ uncertainty_threshold` (default 0.5) → `retrieve`. The host's own self-report overrides the legacy "I have enough context" branch. This is the fix for the "I think I know but I don't" dead loop.
-- **`C. complexity_without_recent_retrieval`** — `complexity_score ≥ complexity_threshold` (default 0.6) AND no retrieve-shaped action in `recent_actions[-5:]` → `retrieve_then_act`. Multi-step work should not be answered from the first internal scratchpad, but a host that has *already* gathered (e.g. `recent_action=["retrieve"]`) is left alone.
+- **`D. EXPLORE`** *(since 0.7.0)* — `complexity_score ≥ complexity_threshold` OR `uncertainty_score ≥ uncertainty_threshold`, AND no `web_search` in `recent_actions[-5:]`, AND `remote_allowed` set on both the config and the caller's `DecisionContext` → `explore`. The host should run a ReAct-style loop: `web_search` → inspect → maybe `web_fetch` → answer. EXPLORE is the only v3 branch that *requires* `remote_allowed`; it never fires offline.
+- **`B. uncertainty_threshold`** — `uncertainty_score ≥ uncertainty_threshold` (default 0.5) → `retrieve`. Fires only when EXPLORE did not (i.e. remote is not allowed, or the host already searched this turn). The host's own self-report overrides the legacy "I have enough context" branch. This is the fix for the "I think I know but I don't" dead loop.
+- **`C. complexity_without_recent_retrieval`** — `complexity_score ≥ complexity_threshold` (default 0.6) AND no retrieve-shaped action in `recent_actions[-5:]` → `retrieve_then_act`. Multi-step work should not be answered from the first internal scratchpad, but a host that has *already* gathered (e.g. `recent_action=["retrieve"]`) is left alone. Fires only when EXPLORE did not.
 
-The order within v3 (pressure → uncertainty → complexity) is deliberate:
-*pressure beats self-doubt beats planning*. If the user has been silent for too
-long, take an action; if you admit you don't know, retrieve; if the plan is
-big but you've already searched, answer. This ordering matches the symptom
-the design was written against.
+The order within v3 is **A → D → B → C**: *pressure beats the web beats self-doubt beats planning*. Pressure means "do anything" — do not even pause to ask whether a search is needed. The web supersedes local retrieve when remote is actually allowed and the host has not yet searched. Self-doubt and planning only fire when the web path is unavailable. This ordering matches the symptom the design was written against.
 
 A v3 engine that receives a `DecisionContext` with all v3 fields at their
 neutral defaults (`complexity_score=0`, `uncertainty_score=0`,
@@ -92,3 +91,34 @@ engine = PolicyEngine(config=config)
 A host that does not set the four new `DecisionContext` fields still gets v2
 behaviour with the same `policy_version` as before. This is the migration
 contract: every adopter can flip the gate independently of their context wiring.
+
+## EXPLORE: when the engine asks the open web
+
+`DecisionAction.EXPLORE` is a forward-compatible superset of `retrieve_then_act`.
+It means: "the task is complex or uncertain, you have not yet asked the open
+web, and the user has granted you network permission — go do a ReAct loop."
+
+A host that does not implement ReAct should map `EXPLORE → RETRIEVE_THEN_ACT`
+and the rest of the system keeps working. A host that does implement ReAct
+should:
+
+1. Read the reason code in `decision.reason_codes` (`complexity_explore` or
+   `uncertainty_explore`) to know which signal tripped.
+2. Call the search adapter (see `agent_compass.adapters.web_search`) with the
+   original `user_input` as the query.
+3. Read the bounded digest; if the answer is in the first 1–2 entries, expand
+   the body on demand via `MemoryService.get(memory_id)` (the web adapters use
+   the same `memory_id` contract).
+4. If still uncertain, call `WebFetchAdapter` on the most relevant URL and
+   summarise again.
+5. Stop at "good enough" or after the per-task retry budget; do not loop
+   silently.
+
+The web adapters (`DuckDuckGoAdapter`, `TavilyAdapter`, `WebFetchAdapter`)
+honour `CompassConfig.remote_allowed`. Without that flag the adapter raises
+`RemoteNotAllowedError` and the orchestrator records it as a per-source error,
+so a missing flag never takes down local recall. The privacy boundary is
+applied to every response: PII is redacted, a row whose body contains a
+*secret* is dropped silently, and `WebFetchAdapter` raises rather than
+returning a page that contains a secret. See `docs/retrieval-orchestration.md`
+for the integration details.

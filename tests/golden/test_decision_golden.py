@@ -55,6 +55,11 @@ def test_decision_golden_snapshots(tmp_path):
         env = dict(base_env)
         if fixture.get("v3"):
             env["AGENT_COMPASS_POLICY_V3"] = "true"
+        if fixture["input"].get("remote"):
+            # EXPLORE is gated on the config-level remote_allowed too. The
+            # CLI passes --remote into the DecisionContext, but CompassConfig
+            # reads its own flag from the environment — set both consistently.
+            env["AGENT_COMPASS_ALLOW_REMOTE"] = "true"
         actual = _decide_cli(fixture["input"], env)
         snapshot = fixture["expected"]
         for key, value in snapshot.items():

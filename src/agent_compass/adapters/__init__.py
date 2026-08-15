@@ -48,3 +48,14 @@ class NullAdapter:
 
 
 __all__ = ["LLMAdapter", "NullAdapter"]
+
+# Web adapters are optional dependencies of the package — they import
+# only stdlib + the local retrieval layer. They are imported lazily so
+# callers that do not need them do not pay the import cost.
+from .web_fetch import WebFetchAdapter  # noqa: E402
+from .web_search import (  # noqa: E402
+    DuckDuckGoAdapter,
+    RemoteNotAllowedError,
+    TavilyAdapter,
+    WebAdapterError,
+)

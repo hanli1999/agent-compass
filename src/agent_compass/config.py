@@ -37,6 +37,14 @@ DEFAULT_UNCERTAINTY_THRESHOLD = 0.5
 # engine forces a tool step. Three means a host that ignores complexity
 # signals still gets nudged by the third silent answer in a row.
 DEFAULT_ACTION_PRESSURE_THRESHOLD = 3
+# New in 0.7.0 — web adapter defaults. The core is offline; these are only
+# consulted when an adapter is wired up. The intent is "fast and conservative":
+# 3 s is enough for a DuckDuckGo HTML scrape, 8 s is enough for a small page
+# fetch, and one retry is enough that a transient network blip is absorbed
+# without doubling wall-clock time.
+DEFAULT_WEB_SEARCH_TIMEOUT_S = 3.0
+DEFAULT_WEB_FETCH_TIMEOUT_S = 8.0
+DEFAULT_WEB_RETRIES = 1
 
 
 @dataclass
@@ -64,6 +72,11 @@ class CompassConfig:
     complexity_threshold: float = DEFAULT_COMPLEXITY_THRESHOLD
     uncertainty_threshold: float = DEFAULT_UNCERTAINTY_THRESHOLD
     action_pressure_threshold: int = DEFAULT_ACTION_PRESSURE_THRESHOLD
+    # New in 0.7.0 — web adapter knobs. Only consulted by adapters/web_search.py
+    # and adapters/web_fetch.py. The core policy engine never reads them.
+    web_search_timeout_s: float = DEFAULT_WEB_SEARCH_TIMEOUT_S
+    web_fetch_timeout_s: float = DEFAULT_WEB_FETCH_TIMEOUT_S
+    web_retries: int = DEFAULT_WEB_RETRIES
 
     def ensure(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -137,6 +150,14 @@ def _apply_overlay(config: CompassConfig, data: dict) -> CompassConfig:
         config.uncertainty_threshold = float(policy["uncertainty_threshold"])
     if "action_pressure_threshold" in policy:
         config.action_pressure_threshold = int(policy["action_pressure_threshold"])
+    # v0.7.0 web knobs.
+    retrieval = policy.get("retrieval") or {}
+    if "web_search_timeout_s" in retrieval:
+        config.web_search_timeout_s = float(retrieval["web_search_timeout_s"])
+    if "web_fetch_timeout_s" in retrieval:
+        config.web_fetch_timeout_s = float(retrieval["web_fetch_timeout_s"])
+    if "web_retries" in retrieval:
+        config.web_retries = int(retrieval["web_retries"])
 
     default_privacy = privacy.get("default_classification")
     if isinstance(default_privacy, str) and default_privacy:
