@@ -103,12 +103,15 @@ def recall_and_speak(compass: Compass, prompt: str) -> None:
 
 
 def on_user_prompt(loop: HostLoop, compass: Compass, prompt: str, **overrides) -> None:
-    """The host's main entry point. Branches on DecisionAction."""
-    # Follow the compass config's remote_allowed unless the caller
-    # explicitly overrode it. This keeps EXPLORE from being silently
-    # suppressed when the caller forgot the flag.
-    if "remote_allowed" not in overrides:
-        overrides["remote_allowed"] = bool(compass.config.remote_allowed)
+    """The host's main entry point. Branches on DecisionAction.
+
+    As of v0.9.1, ``HostLoop.decide()`` auto-injects
+    ``compass.config.remote_allowed`` into the ``DecisionContext`` so
+    the host does not have to thread the flag by hand. A caller that
+    wants to gate ``EXPLORE`` per call (e.g. on a transient network
+    outage) can still pass ``remote_allowed=False`` and override the
+    config-level flag.
+    """
     decision = loop.decide(prompt, **overrides)
     action = decision.action
 

@@ -1,6 +1,21 @@
 # Changelog
 
-## 0.9.0 (unreleased)
+## 0.9.1 (unreleased)
+
+### Changed
+- **`HostLoop.decide()` auto-injects `remote_allowed`** from `compass.config.remote_allowed` into the `DecisionContext` when the caller did not pass it in `overrides`. A host that forgets the flag now gets `EXPLORE` on a complex remote task instead of being silently downgraded to `RETRIEVE_THEN_ACT`. Callers can still override with `remote_allowed=False` (e.g. on a transient network outage) — the auto-inject only fires when the caller did not specify.
+- **Recipe simplification** — `recipes/host_loop.py`'s `on_user_prompt` no longer needs the manual `remote_allowed` injection. The SDK does it. Four-line recipe is now genuinely four lines.
+
+### Tests
+- `tests/unit/test_runtime.py` gains three tests: `test_host_loop_auto_injects_remote_allowed` (the headline behaviour), `test_host_loop_caller_can_override_remote_allowed` (explicit `False` blocks `EXPLORE`), and `test_host_loop_does_not_inject_when_remote_blocked` (offline hosts stay offline).
+
+### Still honest about
+- The auto-inject is for `remote_allowed` only. Every other `DecisionContext` field still uses the caller's value or the neutral default. A host that wants the engine to consult `complexity_score` / `uncertainty_score` it has not set still has to pass them (or use `tracker.set_complexity` / `set_uncertainty`).
+- Agent Compass still does not provide consciousness, subjective experience, true autonomous life, or permission to skip human approval for high-impact actions.
+
+---
+
+## 0.9.0 (2026-08-15)
 
 ### Added
 - **`docs/host-integration.md`** — a 360-line walkthrough that takes a fresh host from `pip install -e .` to a verified loop in one read. Covers install, the four-line host loop, every `DecisionAction` branch handled, the four v3 fields with honest-self-report guidance, web adapter swapping, the cold-start hooks installer, the privacy boundary, the headline verification test, and a troubleshooting table.

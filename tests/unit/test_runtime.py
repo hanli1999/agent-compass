@@ -297,3 +297,52 @@ def test_fresh_host_uses_v3_and_web_out_of_the_box(tmp_path):
     decision = loop.decide("what changed in fastapi 0.118",
                            complexity=0.9, remote_allowed=True, has_sufficient_context=True)
     assert decision.action is DecisionAction.EXPLORE
+
+
+def test_host_loop_auto_injects_remote_allowed(tmp_path):
+    """v0.9.1: a host that forgets the flag still gets EXPLORE when the
+    compass config has remote_allowed=True. This is the friction that
+    v0.9.0 dogfood surfaced and the recipe used to paper over."""
+    compass = Compass(build_smart_default_config(data_dir=tmp_path, remote_allowed=True))
+    apply_smart_defaults(compass)
+    loop = HostLoop(compass)
+
+    # No remote_allowed in overrides — loop should inject from config.
+    decision = loop.decide("what changed in fastapi 0.118", complexity=0.9)
+    assert decision.action is DecisionAction.EXPLORE, (
+        f"auto-injected remote_allowed should fire EXPLORE, got {decision.action}"
+    )
+    assert "complexity_explore" in decision.reason_codes
+
+
+def test_host_loop_caller_can_override_remote_allowed(tmp_path):
+    """A host that wants to gate EXPLORE per call (e.g. on a transient
+    network outage) can still pass remote_allowed=False and override
+    the config-level flag."""
+    compass = Compass(build_smart_default_config(data_dir=tmp_path, remote_allowed=True))
+    apply_smart_defaults(compass)
+    loop = HostLoop(compass)
+
+    decision = loop.decide(
+        "what changed in fastapi 0.118",
+        complexity=0.9,
+        remote_allowed=False,
+    )
+    # Override blocks EXPLORE — falls through to complexity_without_recent_retrieval.
+    assert decision.action is DecisionAction.RETRIEVE_THEN_ACT, (
+        f"caller override should block EXPLORE, got {decision.action}"
+    )
+    assert "complexity_explore" not in decision.reason_codes
+
+
+def test_host_loop_does_not_inject_when_remote_blocked(tmp_path):
+    """When the config says offline, EXPLORE never fires — even if the
+    caller forgets to pass remote_allowed explicitly."""
+    compass = Compass(build_smart_default_config(data_dir=tmp_path, remote_allowed=False))
+    apply_smart_defaults(compass)
+    loop = HostLoop(compass)
+
+    decision = loop.decide("what changed in fastapi 0.118", complexity=0.9)
+    assert decision.action is not DecisionAction.EXPLORE, (
+        f"offline host must not get EXPLORE, got {decision.action}"
+    )

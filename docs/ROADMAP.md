@@ -2,7 +2,23 @@
 
 ## In progress
 
-### v0.9.0 — Documentation, skill pack, dogfood (2026-08-15 →)
+### v0.9.1 — Auto-inject `remote_allowed` (2026-08-15)
+
+v0.9.0 dogfood surfaced real friction: `HostLoop.decide()` did not
+auto-inject `compass.config.remote_allowed` into `DecisionContext`, so a
+host that forgot the flag got silently downgraded from `EXPLORE` to
+`RETRIEVE_THEN_ACT`. The recipe wrapper papered over it; the SDK should
+have done it.
+
+- `HostLoop.decide()` auto-injects `remote_allowed = compass.config.remote_allowed`
+  when the caller did not pass it in `overrides`. Caller overrides still win.
+- Recipe simplification: `recipes/host_loop.py` no longer threads the flag.
+- Three new tests in `tests/unit/test_runtime.py`: auto-inject fires,
+  caller override blocks, offline host stays offline.
+- 266 tests pass. `verify.py` and `recipes/host_loop.py` still produce
+  `OK` and `action: explore` respectively.
+
+### v0.9.0 — Documentation, skill pack, dogfood (2026-08-15)
 
 v0.8.0 shipped the host SDK but left two jobs undone: a fresh host had no
 end-to-end documentation, and no adopter outside 幻梦 / 银月 had actually

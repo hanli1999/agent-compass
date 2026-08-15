@@ -93,6 +93,13 @@ class HostLoop:
         engine. Anything in ``overrides`` is forwarded to
         ``DecisionContext`` unchanged (so a host can pass
         ``remote_allowed=True`` etc. without re-typing the plumbing).
+
+        ``remote_allowed`` is the one field the loop fills in for the
+        host: if the caller did not pass it in ``overrides``, the
+        value from ``compass.config.remote_allowed`` is used. A host
+        that wants to gate EXPLORE per call (e.g. on a transient
+        network outage) can still pass ``remote_allowed=False`` and
+        override the config-level flag.
         """
         snapshot = self.tracker.snapshot(
             complexity=complexity,
@@ -101,6 +108,8 @@ class HostLoop:
         merged_recent = list(snapshot.recent_actions)
         if recent_actions:
             merged_recent.extend(str(a) for a in recent_actions if a)
+        if "remote_allowed" not in overrides:
+            overrides["remote_allowed"] = bool(self.compass.config.remote_allowed)
         ctx = DecisionContext(
             user_input=user_input,
             task_id=task_id,
