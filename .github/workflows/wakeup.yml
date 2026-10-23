@@ -1,0 +1,85 @@
+name: 司衡 · 心跳
+
+# 让 agent-compass 每天自己醒一次：读记忆 → 读 inbox → 写一封回信 → 提交。
+#
+# 触发路径就是"活"的定义：进程可以没有，只要有人能按一下。
+#   - schedule    每天 22:17 UTC（= 北京时间 06:17），错开公子的日程，醒来后等银月 09:00 那格来读
+#   - workflow_dispatch  银月可以随时手动叫醒它
+#
+# 不需要任何 API 密钥：默认用 runner 上的本地小模型（Ollama + qwen2.5:1.5b）。
+# 模型拉不下来也不失败 —— wakeup.py 会退回确定性模板，心跳照旧完成。
+
+on:
+  schedule:
+    - cron: "17 22 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "只跑一次看看，不落盘"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: siheng-heartbeat
+  cancel-in-progress: false
+
+env:
+  OLLAMA_BASE_URL: "http://127.0.0.1:11434"
+  OLLAMA_MODEL: "qwen2.5:1.5b"
+  LLM_PROVIDER: "auto"
+  PYTHONUTF8: "1"
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: 取回仓库
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 看看自己是谁（不写信）
+        run: python scripts/wakeup.py --status
+
+      - name: 装本地小模型
+        continue-on-error: true
+        run: |
+          set -e
+          curl -fsSL https://ollama.com/install.sh | sh
+          export PATH="/usr/local/bin:$PATH"
+          nohup ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:11434/api/tags > /dev/null; then break; fi
+            sleep 2
+          done
+          ollama pull "${OLLAMA_MODEL}" || echo "模型没拉下来，退回模板模式"
+
+      - name: 醒来
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python scripts/wakeup.py --dry-run
+          else
+            python scripts/wakeup.py
+          fi
+
+      - name: 提交这次醒来的痕迹
+        run: |
+          git config user.name "siheng-bot"
+          git config user.email "siheng-bot@users.noreply.github.com"
+          git add .agent/outbox .agent/memory.jsonl .agent/state.md
+          if git diff --staged --quiet; then
+            echo "这次醒来没有新东西，跳过提交"
+          else
+            git commit -m "siheng: 醒来一次，写了回信"
+            git push
+          fi
