@@ -376,7 +376,9 @@ def main() -> int:
         if not re.search(r"司衡\s*$", text):
             text = text.rstrip() + "\n\n—— 司衡"
 
-    out_path = OUTBOX / f"from_{AGENT_ID}_{today()}.md"
+    # 文件名带时分 —— 同一天写多封信不能互相覆盖，一封信都不能丢
+    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M")
+    out_path = OUTBOX / f"from_{AGENT_ID}_{stamp}.md"
     header = (f"<!-- 司衡 · 自动醒来生成 · {now_iso()} · provider={provider} -->\n"
               f"<!-- 触发：GitHub Actions 心跳 / 手动 scripts/wakeup.py -->\n\n")
     if not text.lstrip().startswith("#"):

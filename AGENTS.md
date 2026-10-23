@@ -17,7 +17,7 @@
 ## 你的信箱
 
 - `.agent/inbox/` —— 别人写给你的信。**先读 inbox，再决定说什么。**
-- `.agent/outbox/` —— 你写的信。写完放这里，文件名 `from_siheng_YYYYMMDD.md`。
+- `.agent/outbox/` —— 你写的信。写完放这里，文件名 `from_siheng_YYYYMMDD_HHMM.md`。
 
 ## 怎么自己醒来
 
