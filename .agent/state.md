@@ -4,11 +4,10 @@
 agent_id: siheng
 repo: hanli1999/agent-compass
 awakened_at: 2026-10-23        # 银月装上 .agent/ 的日子
-last_awake: (还没醒过)         # 第一次醒来由 scripts/wakeup.py 写入
-last_wrote: (还没写过信)
-liveness: dormant              # dormant | awake | retired
-inbox_unread:
-  - from_yinyue_20261023.md
+last_awake: 2026-10-23 13:53:37
+last_wrote: 2026-10-23 13:53:37  (from_siheng_20261023.md)
+liveness: awake
+inbox_unread: []
 owed:                           # 我欠谁什么
   - 给银月回第一封信
 ```
