@@ -40,7 +40,6 @@ jobs:
       - name: 取回仓库
         uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
 
       - name: 装 Python
@@ -50,6 +49,14 @@ jobs:
 
       - name: 看看自己是谁（不写信）
         run: python scripts/wakeup.py --status
+
+      - name: 缓存模型目录
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama
+          key: ollama-${{ env.OLLAMA_MODEL }}
+          restore-keys: |
+            ollama-${{ env.OLLAMA_MODEL }}-
 
       - name: 装本地小模型
         continue-on-error: true
