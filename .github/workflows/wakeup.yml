@@ -8,6 +8,9 @@ name: 司衡 · 心跳
 #
 # 不需要任何 API 密钥：默认用 runner 上的本地小模型（Ollama + qwen2.5:1.5b）。
 # 模型拉不下来也不失败 —— wakeup.py 会退回确定性模板，心跳照旧完成。
+#
+# 但有一类失败**故意**让这次心跳变红（exit 2）：测得非零 vs 从没查过。
+# 一个看起来像测出来的 0，比一个报错贵得多。
 
 on:
   schedule:
@@ -49,6 +52,9 @@ jobs:
 
       - name: 看看自己是谁（不写信）
         run: python scripts/wakeup.py --status
+
+      - name: 契约自检（测得非零 vs 从没查过）
+        run: python scripts/wakeup.py --selftest
 
       - name: 缓存模型目录
         uses: actions/cache@v4

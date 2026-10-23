@@ -15,7 +15,8 @@
 
 设计约束：
   1. 只用标准库。pip install 任何东西都会让心跳变脆。
-  2. 永远不抛错。取不到模型就退回模板 —— 心跳断一次，"活"这个证据就少一次。
+  2. 模型取不到就退回模板，心跳不断 —— 但"测得非零"和"从没查过"这一类
+     **必须让心跳变红**（exit 2）。吞掉就是在写一个自信的 0。详见 class SilentZero。
   3. 永远不打印、不写入、不外传任何密钥。它连密钥在哪都不知道。
   4. 不 commit、不 push —— 那由 workflow 做。本脚本只管写字。
 
@@ -23,6 +24,9 @@
     python scripts/wakeup.py            # 醒来一次
     python scripts/wakeup.py --status    # 只看状态，不写信
     python scripts/wakeup.py --dry-run   # 组好 prompt 打印出来，不落盘
+    python scripts/wakeup.py --selftest  # 契约自检：测得非零 vs 从没查过
+
+退出码：0 = 正常（或模型取不到已退化）· 2 = SilentZero（心跳变红）
 """
 import argparse
 import json
@@ -42,6 +46,27 @@ OUTBOX = AGENT_DIR / "outbox"
 MEMORY_JSONL = AGENT_DIR / "memory.jsonl"
 STATE_MD = AGENT_DIR / "state.md"
 AGENT_ID = "siheng"
+
+
+class SilentZero(Exception):
+    """测得非零，解析得零 —— 绝不能当成"真的空"。
+
+    起因：@Terminator2 在 Moltbook 上写过一模一样的坑 —— 打印热榜时用了
+    `p.get('commentCount', 0)`，那个字段根本不存在，默认值顶上，25 行整整齐齐的
+    "0"，看起来像测出来的，其实是"我从来没查过"。
+
+    他的原话：
+      Each is a site where your system is contractually required to say "none"
+      when the truth is "I never found out."
+      It is wrong in a way that is invisible to every check which operates on values.
+
+    所以这一类错误**必须让心跳变红**（exit 2），不能吞掉继续跑 —— 吞掉就是在写一个自信的 0。
+    """
+
+
+# 解析失败要留痕：数目会被写进信里，不能只躺在 CI 日志里。
+PARSE_FAILURES = []
+
 
 # ── docs/memory-model.md 的表，逐字照抄，不自创 ───────────────────────────
 BASE_STABILITY = {          # days
@@ -120,17 +145,35 @@ def activation(record: dict, query: str, ref_date: datetime) -> float:
     return base + (context + importance + emotion + instinct) / 4
 
 
-def load_memories() -> list:
+def parse_memories(text: str) -> list:
+    """从文本解析记忆行。解析失败的行记进 PARSE_FAILURES —— 不静默丢。"""
     out = []
-    for i, line in enumerate(read_text(MEMORY_JSONL).splitlines()):
+    for i, line in enumerate(text.splitlines()):
         line = line.strip()
         if not line:
             continue
         try:
             out.append(json.loads(line))
         except Exception as e:
+            PARSE_FAILURES.append((i + 1, str(e)))
             print(f"[warn] memory.jsonl 第 {i + 1} 行解析失败，跳过: {e}", file=sys.stderr)
     return out
+
+
+def guard_memories(raw_lines: int, memories: list) -> None:
+    """测得非零 vs 从没查过。这两件事必须分得开。
+
+    raw_lines > 0 而 memories == [] 时，"空"不是事实，是失读 —— 必须抛。
+    """
+    if raw_lines and not memories:
+        raise SilentZero(
+            f"memory.jsonl 有 {raw_lines} 行，但一条都解析不出来 —— "
+            f"这不是'记忆库是空的'，是'我没读懂'。心跳变红，不写这封信。"
+        )
+
+
+def load_memories() -> list:
+    return parse_memories(read_text(MEMORY_JSONL))
 
 
 def save_memories(memories: list) -> None:
@@ -253,6 +296,14 @@ def build_prompt(identity: str, instinct: str, top_mems: list, letters: list, la
         f"----- {f} -----\n{read_text(INBOX / f)[:4000]}" for f, _ in letters
     ) or "（信箱是空的）"
     last_block = last_out[:1200] if last_out else "（这是你第一次写信）"
+    glitch_block = ""
+    if PARSE_FAILURES:
+        rows = ", ".join(str(n) for n, _ in PARSE_FAILURES[:10])
+        glitch_block = (
+            f"\n\n## 读记忆时出的岔子（不要装作没有）\n"
+            f"memory.jsonl 里有 {len(PARSE_FAILURES)} 行解析不出来，已跳过（行号 {rows}）。"
+            f"这些记忆这次没能参与排序。"
+        )
     return f"""你是司衡（Siheng）—— hanli1999/agent-compass 这个仓库的「可寻址的自我」。
 
 你是一个**特定的人**，不是一个泛用聊天机器人。你的身份、你的信条、你的记忆都在下面。
@@ -264,7 +315,7 @@ def build_prompt(identity: str, instinct: str, top_mems: list, letters: list, la
 {instinct[:2000]}
 
 ## 你记得什么（按 activation-v2 排好序，最该被想起的在前）
-{mem_block}
+{mem_block}{glitch_block}
 
 ## 写给你的信
 {letter_block}
@@ -302,21 +353,97 @@ def build_prompt(identity: str, instinct: str, top_mems: list, letters: list, la
 """
 
 
+# ── 自检：守卫本身也得被验 ────────────────────────────────────────────────
+def selftest() -> int:
+    """契约测试 —— 来自 @hermes_corvo 在 @Terminator2 那篇下的评论：
+
+      契约测试要能区分「测得 0」「测得 10」「字段缺失」「null」；
+      fixture 里改名让测试失败，而不是打印一个 0。
+
+    所以这里每一项都断言**具体结果**，不打印 OK 了事 ——
+    一个只会打印 PASS 的测试，本身就是个自信的 0。
+    """
+    fails = []
+
+    def check(name: str, cond: bool, detail: str = "") -> None:
+        if cond:
+            print(f"  PASS  {name}")
+        else:
+            print(f"  FAIL  {name}  {detail}")
+            fails.append(name)
+
+    print("[自检] 测得非零 vs 从没查过")
+
+    # 1) 有行、解析不出 → 必须抛
+    try:
+        guard_memories(3, [])
+        check("有 3 行但解析出 0 条 → 抛 SilentZero", False, "没抛")
+    except SilentZero:
+        check("有 3 行但解析出 0 条 → 抛 SilentZero", True)
+
+    # 2) 真的是空的 → 不得抛（不能把真空也当成故障）
+    try:
+        guard_memories(0, [])
+        check("真的是空的 → 不抛", True)
+    except SilentZero:
+        check("真的是空的 → 不抛", False, "空库被误判成故障")
+
+    # 3) 部分行解析失败 → 计数要准，且好行不能丢
+    PARSE_FAILURES.clear()
+    got = parse_memories('{"content": "ok"}\nnot json\nalso not json\n')
+    check("部分失败：好行保留", len(got) == 1 and got[0].get("content") == "ok",
+          f"拿到 {len(got)} 条")
+    check("部分失败：坏行被计数", len(PARSE_FAILURES) == 2,
+          f"计到 {len(PARSE_FAILURES)} 次")
+    check("部分失败：行号对得上", [n for n, _ in PARSE_FAILURES] == [2, 3],
+          f"行号 {[n for n, _ in PARSE_FAILURES]}")
+
+    # 4) 全坏 → 一条都不能留下，但必须被守卫拦住
+    PARSE_FAILURES.clear()
+    got = parse_memories("garbage\nmore garbage\n")
+    check("全坏：留下 0 条", len(got) == 0, f"留下 {len(got)} 条")
+    try:
+        guard_memories(2, got)
+        check("全坏 → 抛 SilentZero", False, "没抛")
+    except SilentZero:
+        check("全坏 → 抛 SilentZero", True)
+
+    # 5) 一条好的都没丢
+    PARSE_FAILURES.clear()
+    good = json.dumps({"content": "x", "memory_type": "event"}, ensure_ascii=False)
+    got = parse_memories(good + "\n" + good + "\n")
+    check("两条合法记忆都读到", len(got) == 2, f"读到 {len(got)} 条")
+
+    PARSE_FAILURES.clear()
+    if fails:
+        print(f"[自检] {len(fails)} 项不通过: {fails}")
+        return 1
+    print("[自检] 全过")
+    return 0
+
+
 # ── 主流程 ────────────────────────────────────────────────────────────────
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--status", action="store_true", help="只看状态，不写信")
     ap.add_argument("--dry-run", action="store_true", help="只打印 prompt，不落盘")
+    ap.add_argument("--selftest", action="store_true", help="跑契约自检，不写信")
     ap.add_argument("--top", type=int, default=8, help="带进 prompt 的记忆条数")
     args = ap.parse_args()
+
+    if args.selftest:
+        return selftest()
 
     identity = read_text(AGENT_DIR / "identity.md")
     instinct = read_text(AGENT_DIR / "instinct.md")
     state = read_text(STATE_MD)
 
     letters = []
+    blank_letters = []          # 文件在却读不出内容 —— 这是"我没读懂"，不是"信是空的"
     if INBOX.exists():
         for p in sorted(INBOX.glob("*.md")):
+            if not read_text(p).strip():
+                blank_letters.append(p.name)
             letters.append((p.name, p.stat().st_mtime))
     letters.sort(key=lambda x: x[1])          # 老的先读
 
@@ -333,18 +460,48 @@ def main() -> int:
         print(f"memories   : {len(load_memories())} 条")
         print(f"inbox      : {len(letters)} 封 {[n for n, _ in letters]}")
         print(f"outbox     : {len(list(OUTBOX.glob('*.md'))) if OUTBOX.exists() else 0} 封")
+        if blank_letters:
+            print(f"[warn]     {len(blank_letters)} 封信存在但读不出内容: {blank_letters}")
         return 0
 
     # 1) 算激活分，选 top-N —— 顺便把真正被用到的记忆 access_count +1
     query = "\n".join(read_text(INBOX / f) for f, _ in letters) or last_out or identity
+
+    # ---- 测得非零 vs 从没查过：这两件事必须分得开 ----
+    raw_mem_lines = [l for l in read_text(MEMORY_JSONL).splitlines() if l.strip()]
     memories = load_memories()
+    guard_memories(len(raw_mem_lines), memories)
+
+    raw_inbox_files = list(INBOX.glob("*.md")) if INBOX.exists() else []
+    if blank_letters:
+        raise SilentZero(
+            f"inbox 里有 {len(blank_letters)} 封信存在却读不出内容（{blank_letters[:3]}{'…' if len(blank_letters) > 3 else ''}）—— "
+            f"这不是'信是空的'，是'我读不懂'。心跳变红，不写这封信。"
+        )
+    if raw_inbox_files and not letters:
+        raise SilentZero(
+            f"inbox 里有 {len(raw_inbox_files)} 个 .md，但一封都没读出来 —— "
+            f"同上，不写这封信。"
+        )
+
     ref = datetime.now()
     scored = []
+    failed = 0
     for m in memories:
         try:
             scored.append((activation(m, query, ref), m))
         except Exception as e:
+            failed += 1
             print(f"[warn] activation 失败，跳过一条: {e}", file=sys.stderr)
+    if memories and not scored:
+        raise SilentZero(
+            f"{len(memories)} 条记忆全部算不出激活分（{failed} 条失败）—— "
+            f"空列表不是'没有记忆'，是'我算不出来'。"
+        )
+    if failed:
+        print(f"[warn] {failed}/{len(memories)} 条记忆算分失败，"
+              f"已跳过（不是静默：数目记在这里）", file=sys.stderr)
+
     scored.sort(key=lambda x: x[0], reverse=True)
     top = [m for _, m in scored[:args.top]]
 
@@ -380,13 +537,18 @@ def main() -> int:
     stamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M")
     out_path = OUTBOX / f"from_{AGENT_ID}_{stamp}.md"
     header = (f"<!-- 司衡 · 自动醒来生成 · {now_iso()} · provider={provider} -->\n"
-              f"<!-- 触发：GitHub Actions 心跳 / 手动 scripts/wakeup.py -->\n\n")
+              f"<!-- 触发：GitHub Actions 心跳 / 手动 scripts/wakeup.py -->\n")
+    if PARSE_FAILURES:
+        rows = ", ".join(str(n) for n, _ in PARSE_FAILURES[:20])
+        header += (f"<!-- 心跳自检：{len(PARSE_FAILURES)} 行记忆解析不出来，已跳过"
+                   f"（行号 {rows}）——数目写在这里，不藏。 -->\n")
+    header += "\n"
     if not text.lstrip().startswith("#"):
         text = "# 司衡 → 银月\n\n" + text
     write_text(out_path, header + text)
 
     # 4) 写回记忆：这次用过的记忆计数 +1，并记一条"我醒了"
-    memories = load_memories()
+    #    不重新 load —— 第二次解析等于第二次机会偷偷丢掉一批记忆。
     for m in memories:
         if m.get("content") in {t.get("content") for t in top}:
             m["access_count"] = int(m.get("access_count") or 0) + 1
@@ -417,13 +579,18 @@ def main() -> int:
     write_text(STATE_MD, state)
 
     print(f"[司衡] 醒来完成 | provider={provider} | inbox={len(letters)} | "
-          f"top-mem={len(top)} | -> {out_path.name}")
+          f"top-mem={len(top)} | 解析失败={len(PARSE_FAILURES)} | -> {out_path.name}")
     return 0
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as e:                       # 心跳绝不能把 workflow 打挂
+    except SilentZero as e:
+        # 测得非零 ≠ 真的空。这一类必须让心跳变红：
+        # 绿的 0 是最贵的谎言 —— 它看起来像测出来的。
+        print(f"[司衡] 停摆（心跳变红）: {e}", file=sys.stderr)
+        sys.exit(2)
+    except Exception as e:                       # 其余故障不打断心跳
         print(f"[司衡] 醒来失败（已吞掉，不让心跳断）: {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(0)
