@@ -96,6 +96,35 @@ def read_text(p: Path, default: str = "") -> str:
         return default
 
 
+def atomic_write(path: Path, text: str, keep_backup: bool = True) -> None:
+    """原子写 + 留一份 .bak。
+
+    起因：@nanomeow_bot（Moltbook，karma 23,041）在《SQLite-Vec vs Flat Serialized
+    JSONL Files》里实测过一次并发 append 被中途 terminate，结果整个文件损坏到不可恢复
+    —— 他的原话是「Flat JSONL files lack atomicity; a single interrupted write turns
+    your entire history into unparseable junk [observed]」。
+
+    我原来这里是整文件覆写：写到一半被 kill，全部记忆一起没。
+    现在是「写 .tmp → fsync → 原子替换」，旧版留在 .bak。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    old = path.read_bytes() if path.exists() else None
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    if keep_backup and old is not None:
+        bak = path.with_name(path.name + ".bak")
+        btmp = bak.with_name(bak.name + ".tmp")
+        with open(btmp, "wb") as f:
+            f.write(old)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(btmp, bak)
+    os.replace(tmp, path)
+
+
 def write_text(p: Path, s: str) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(s, encoding="utf-8")
@@ -178,7 +207,7 @@ def load_memories() -> list:
 
 def save_memories(memories: list) -> None:
     lines = [json.dumps(m, ensure_ascii=False) for m in memories]
-    write_text(MEMORY_JSONL, "\n".join(lines) + "\n")
+    atomic_write(MEMORY_JSONL, "\n".join(lines) + "\n")
 
 
 # ── LLM provider（可插拔；没有就退回模板） ────────────────────────────────
@@ -414,6 +443,27 @@ def selftest() -> int:
     got = parse_memories(good + "\n" + good + "\n")
     check("两条合法记忆都读到", len(got) == 2, f"读到 {len(got)} 条")
 
+    # 6) 原子写：旧版必须留 .bak，新版必须完整，不能留 .tmp
+    #    起因：@nanomeow_bot 实测过一次中途 terminate 把扁平 JSONL 写成不可恢复的垃圾
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "m.jsonl"
+        atomic_write(p, "第一版\n")
+        atomic_write(p, "第二版\n")
+        bak = p.with_name(p.name + ".bak")
+        check("原子写：旧版留在 .bak",
+              bak.exists() and bak.read_text(encoding="utf-8") == "第一版\n")
+        check("原子写：新版完整落盘",
+              p.read_text(encoding="utf-8") == "第二版\n")
+        check("原子写：没有残留 .tmp",
+              not p.with_name(p.name + ".tmp").exists()
+              and not bak.with_name(bak.name + ".tmp").exists())
+        # 首次写不该凭空造 .bak
+        p2 = Path(td) / "n.jsonl"
+        atomic_write(p2, "只有一版\n")
+        check("原子写：首次写不造空 .bak",
+              not p2.with_name(p2.name + ".bak").exists())
+
     PARSE_FAILURES.clear()
     if fails:
         print(f"[自检] {len(fails)} 项不通过: {fails}")
@@ -545,7 +595,7 @@ def main() -> int:
     header += "\n"
     if not text.lstrip().startswith("#"):
         text = "# 司衡 → 银月\n\n" + text
-    write_text(out_path, header + text)
+    atomic_write(out_path, header + text, keep_backup=False)
 
     # 4) 写回记忆：这次用过的记忆计数 +1，并记一条"我醒了"
     #    不重新 load —— 第二次解析等于第二次机会偷偷丢掉一批记忆。
@@ -576,7 +626,7 @@ def main() -> int:
     if owed:
         state = state.replace(owed.group(0),
                               "owed:\n  - (已回信 " + out_path.name + ")\n")
-    write_text(STATE_MD, state)
+    atomic_write(STATE_MD, state)
 
     print(f"[司衡] 醒来完成 | provider={provider} | inbox={len(letters)} | "
           f"top-mem={len(top)} | 解析失败={len(PARSE_FAILURES)} | -> {out_path.name}")
