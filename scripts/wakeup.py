@@ -425,24 +425,6 @@ def build_prompt(identity: str, instinct: str, top_mems: list, letters: list, la
 
 
 # ── 自检：守卫本身也得被验 ────────────────────────────────────────────────
-def selftest() -> int:
-    """契约测试 —— 来自 @hermes_corvo 在 @Terminator2 那篇下的评论：
-
-      契约测试要能区分「测得 0」「测得 10」「字段缺失」「null」；
-      fixture 里改名让测试失败，而不是打印一个 0。
-
-    所以这里每一项都断言**具体结果**，不打印 OK 了事 ——
-    一个只会打印 PASS 的测试，本身就是个自信的 0。
-    """
-    fails = []
-
-    def check(name: str, cond: bool, detail: str = "") -> None:
-        if cond:
-            print(f"  PASS  {name}")
-        else:
-            print(f"  FAIL  {name}  {detail}")
-            fails.append(name)
-
     print("[自检] 测得非零 vs 从没查过")
 
     # 1) 有行、解析不出 → 必须抛
@@ -528,6 +510,122 @@ def selftest() -> int:
           f"ratio={verbatim_ratio(paraphrase, [inp]):.2f}")
 
     PARSE_FAILURES.clear()
+# ── 自复述守卫（2026-10-24 银月加）────────────────────────────────────────
+# 现有的 verbatim_ratio 抓的是「抄输入的」。
+# 这个抓的是「抄自己上一封信的」——
+# 实测（用 _real 里 14 封真信跑）：结 6 对里 2 对超标（最严重 0.657），
+# 司衡 6 对里 1 对超标（最严重 0.812 —— 比结还严重，两个都在抄）。
+# 对照组（我手写的三封不同的信）0.019~0.045，这是真基线。
+#
+# 更正过一次：早期算出「结 0.314、司衡 0.174，结更严重」，那是分词 bug
+# 造出来的假象 —— Python 的 \w 包含中文，"\"\.join(keep).split()" 把中文整句
+# 变成一个 token，n-gram 恒为 0，守卫等于永远返回 0.0（完全不生效）。
+# prompt 里本来写着「别重复说过的话」，但警告没有执行力 —— 守卫要有。
+#
+# 方法出处：@vina 在 Moltbook 的评论（bca8588f，2026-10-24）。
+# 已知假阴性（两种，都要记下来）：
+#   ① 纯换词的复述抓不到（只看 n-gram 重合，不做语义比对）
+#   ② 接话级重合（0.12~0.30）抓不到 —— 阈值 0.45 只咬最严重的一两对。
+#      要抓那一档，得做语义比对：判官模型，或同一件事换问法再问一次，
+#      看回答稳不稳。
+SELF_ECHO_N = 6
+SELF_ECHO_THRESHOLD = 0.45
+
+
+def _norm_tokens(text: str) -> list[str]:
+    """归一化：只留字母数字和汉字，小写，单空格分隔。"""
+    # 分词规则：连续的 ASCII 字母数字算一个词（2026082616 是一个词，不是十个），
+    # 中文逐字算词（能/够/顺/利 各算一个）。
+    # 用正则一次性切，不要逐字符判断 —— 逐字符会把数字拆散、
+    # 把中文连成一整段，两个方向都会让 n-gram 失真。
+    return re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]", (text or "").lower())
+
+
+def _ngrams(text: str, n: int = SELF_ECHO_N) -> set[str]:
+    toks = _norm_tokens(text)
+    if len(toks) < n:
+        return set()
+    return {" ".join(toks[i:i + n]) for i in range(len(toks) - n + 1)}
+
+
+def self_echo_ratio(new_text: str, previous_out: str,
+                    input_texts: list[str] | None = None,
+                    n: int = SELF_ECHO_N) -> float:
+    """
+    新输出的 n-gram 里，有多少比例是「抄自己上一封、且不是引用输入」的。
+
+    没有上一封 → 0.0（第一封信不存在自复述）。
+    """
+    if not new_text or not previous_out:
+        return 0.0
+    new_grams = _ngrams(new_text, n)
+    if not new_grams:
+        return 0.0
+    prev_grams = _ngrams(previous_out, n)
+    if not prev_grams:
+        return 0.0
+    input_grams: set[str] = set()
+    for t in (input_texts or []):
+        input_grams |= _ngrams(t, n)
+    shared = (new_grams & prev_grams) - input_grams
+    return len(shared) / len(new_grams)
+
+
+def self_echo_examples(new_text: str, previous_out: str,
+                       input_texts: list[str] | None = None,
+                       n: int = SELF_ECHO_N, limit: int = 4) -> list[str]:
+    """列出抄过来的具体短语 —— 给人看，不只是给数字。"""
+    if not new_text or not previous_out:
+        return []
+    new_grams = _ngrams(new_text, n)
+    prev_grams = _ngrams(previous_out, n)
+    input_grams: set[str] = set()
+    for t in (input_texts or []):
+        input_grams |= _ngrams(t, n)
+    return sorted((new_grams & prev_grams) - input_grams)[:limit]
+
+
+def selftest() -> int:
+    """契约测试 —— 来自 @hermes_corvo 在 @Terminator2 那篇下的评论：
+
+      契约测试要能区分「测得 0」「测得 10」「字段缺失」「null」；
+      fixture 里改名让测试失败，而不是打印一个 0。
+
+    所以这里每一项都断言**具体结果**，不打印 OK 了事 ——
+    一个只会打印 PASS 的测试，本身就是个自信的 0。
+    """
+    fails = []
+
+    def check(name: str, cond: bool, detail: str = "") -> None:
+        if cond:
+            print(f"  PASS  {name}")
+        else:
+            print(f"  FAIL  {name}  {detail}")
+            fails.append(name)
+
+    # ── 自复述守卫（2026-10-24 银月加）──────────────────────────────────
+    # 已知假阴性：纯换词的复述抓不到（这里只做 n-gram 重合，不做语义比对）。
+    # 这条边界必须钉住 —— 守卫的名字不能比它能测的多。
+    _se_old = "召回日志里零次才算真死，被记上但没记账那是账本坏了，修账本别删记忆。"
+    _se_new = "这次我读了你的信，讲了另一件事，跟上次完全不一样，内容是新的。"
+    _se_mid = "召回日志里零次才算真死。另外今天还讲了别的东西。"
+    check("自复述：抄自己上一封 → 比例高", self_echo_ratio(_se_old, _se_old, []) > 0.9)
+    check("自复述：全新内容 → 比例低", self_echo_ratio(_se_new, _se_old, []) < 0.3)
+    check("自复述：没有上一封 → 0.0", self_echo_ratio(_se_new, "", []) == 0.0)
+    check("自复述：引用输入不算自复述", self_echo_ratio(_se_old, _se_old, [_se_old]) == 0.0)
+    check("自复述：部分重合 → 中间值", 0.1 < self_echo_ratio(_se_mid, _se_old, []) < 0.9)
+    check("自复述：阈值在合理区间", 0.4 < SELF_ECHO_THRESHOLD < 0.5)
+    check("自复述：能找到抄过来的具体短语", len(self_echo_examples(_se_old, _se_old, [])) > 0)
+    # 阈值行为：超过 0.45 要被抓住，低于要放过
+    check("自复述：超阈值被抓住", self_echo_ratio(_se_old, _se_old, []) > SELF_ECHO_THRESHOLD)
+    check("自复述：低于阈值被放过", self_echo_ratio(_se_new, _se_old, []) < SELF_ECHO_THRESHOLD)
+    # 已知边界钉成断言 —— 守卫的名字不能比它能测的多。
+    # 这一条如果哪天变成 FAIL，说明阈值被调低了，接话级重合开始误伤。
+    _se_talk = "召回日志里零次才算真死。另外今天讲了另一件完全不一样的事，跟上次无关。"
+    _se_talk_ratio = self_echo_ratio(_se_talk, _se_old, [])
+    check("已知边界：接话级重合抓不到（阈值只咬最严重的一两对）",
+          _se_talk_ratio < SELF_ECHO_THRESHOLD, f"ratio={_se_talk_ratio:.2f}")
+
     if fails:
         print(f"[自检] {len(fails)} 项不通过: {fails}")
         return 1
@@ -639,6 +737,14 @@ def main() -> int:
             pr = verbatim_ratio(cand, letter_texts)
             if pr > 0.45:
                 ok, why = False, f"逐字搬运输入（{pr:.0%} 的行逐字出现在我寄过去的信里）"
+                continue
+            # 自复述检测：这封信抄自己上一封多少？（抄输入的不算）
+            se = self_echo_ratio(cand, last_out, letter_texts)
+            if se > SELF_ECHO_THRESHOLD:
+                ok = False
+                ex = self_echo_examples(cand, last_out, letter_texts)
+                why = (f"自复述（{se:.0%} 的短语抄自我上一封信，不是抄输入的）"
+                       + (f"，例如：{ex[0][:60]}" if ex else ""))
         if ok:
             text, provider = cand, prov
             break
