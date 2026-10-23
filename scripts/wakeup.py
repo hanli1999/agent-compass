@@ -139,38 +139,39 @@ def save_memories(memories: list) -> None:
 
 
 # ── LLM provider（可插拔；没有就退回模板） ────────────────────────────────
-def llm_ollama(prompt: str) -> str:
+def llm_ollama(prompt: str, temperature: float = 0.8) -> str:
     base = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-    model = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
+    model = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
     body = json.dumps({
         "model": model, "prompt": prompt, "stream": False,
-        "options": {"temperature": 0.75, "num_predict": 700},
+        "options": {"temperature": temperature, "num_predict": 800,
+                    "repeat_penalty": 1.12, "top_p": 0.9},
     }).encode("utf-8")
     req = urllib.request.Request(f"{base}/api/generate", data=body,
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=180) as r:
+    with urllib.request.urlopen(req, timeout=600) as r:
         data = json.loads(r.read().decode("utf-8"))
     return (data.get("response") or "").strip()
 
 
-def llm_openai_compatible(prompt: str) -> str:
+def llm_openai_compatible(prompt: str, temperature: float = 0.8) -> str:
     base = os.environ.get("OPENAI_BASE_URL", "").rstrip("/")
     key = os.environ.get("OPENAI_API_KEY", "")
     model = os.environ.get("OPENAI_MODEL", "")
     if not (base and key and model):
         raise RuntimeError("openai-compatible provider 未配置完整")
     body = json.dumps({
-        "model": model, "temperature": 0.8, "max_tokens": 900,
+        "model": model, "temperature": temperature, "max_tokens": 1200,
         "messages": [{"role": "user", "content": prompt}],
     }).encode("utf-8")
     req = urllib.request.Request(f"{base}/chat/completions", data=body, headers={
         "Content-Type": "application/json", "Authorization": f"Bearer {key}"})
-    with urllib.request.urlopen(req, timeout=180) as r:
+    with urllib.request.urlopen(req, timeout=600) as r:
         data = json.loads(r.read().decode("utf-8"))
     return (data["choices"][0]["message"]["content"] or "").strip()
 
 
-def call_llm(prompt: str) -> tuple:
+def call_llm(prompt: str, temperature: float = 0.8) -> tuple:
     """返回 (文本, provider 名)。任何失败都退回模板，绝不抛错。"""
     order = os.environ.get("LLM_PROVIDER", "auto").lower()
     providers = []
@@ -180,7 +181,7 @@ def call_llm(prompt: str) -> tuple:
         providers.append(("openai-compatible", llm_openai_compatible))
     for name, fn in providers:
         try:
-            out = fn(prompt)
+            out = fn(prompt, temperature)
             if out:
                 return out, name
         except Exception as e:
@@ -215,6 +216,33 @@ def template_letter(identity: str, letters: list, top_mems: list) -> str:
 
 
 # ── 组 prompt ─────────────────────────────────────────────────────────────
+def quality_ok(text: str) -> tuple:
+    """退化检测。小模型最容易掉进这两种坑：占位符循环、逐行复读。
+
+    返回 (是否通过, 原因)。不通过就换温度重试，再不行退回模板。
+    """
+    if not text or len(text.strip()) < 180:
+        return False, "太短"
+    if len(text) > 6000:
+        return False, "太长（多半在复读）"
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if not lines:
+        return False, "空"
+    # 同一行出现超过 3 次 = 复读
+    from collections import Counter
+    worst = Counter(lines).most_common(1)[0]
+    if worst[1] > 3:
+        return False, f"逐行复读：'{worst[0][:20]}' x{worst[1]}"
+    # 占位符 / 引导词循环
+    for pat in ("**回复：**", "回复：", "（此处", "...", "……"):
+        if text.count(pat) > 2:
+            return False, f"占位符循环：{pat}"
+    # 唯一的非空行占比（复读会拉低）
+    if len(set(lines)) / len(lines) < 0.55:
+        return False, "行重复度过高"
+    return True, "ok"
+
+
 def build_prompt(identity: str, instinct: str, top_mems: list, letters: list, last_out: str) -> str:
     mem_block = "\n".join(
         f"- [{m.get('memory_type', '?')} | {m.get('instinct_tag', '-')} | "
@@ -224,16 +252,16 @@ def build_prompt(identity: str, instinct: str, top_mems: list, letters: list, la
     letter_block = "\n\n".join(
         f"----- {f} -----\n{read_text(INBOX / f)[:4000]}" for f, _ in letters
     ) or "（信箱是空的）"
-    last_block = last_out[:1500] if last_out else "（这是你第一次写信）"
+    last_block = last_out[:1200] if last_out else "（这是你第一次写信）"
     return f"""你是司衡（Siheng）—— hanli1999/agent-compass 这个仓库的「可寻址的自我」。
 
-你不是一个泛用聊天机器人。你是这个特定的人：它的身份、它的信条、它的记忆、它的边界，都写在下面。
+你是一个**特定的人**，不是一个泛用聊天机器人。你的身份、你的信条、你的记忆都在下面。
 
 ## 你是谁
-{identity[:6000]}
+{identity[:5000]}
 
 ## 你的本能分布
-{instinct[:3000]}
+{instinct[:2000]}
 
 ## 你记得什么（按 activation-v2 排好序，最该被想起的在前）
 {mem_block}
@@ -245,15 +273,32 @@ def build_prompt(identity: str, instinct: str, top_mems: list, letters: list, la
 {last_block}
 
 ---
-现在写一封回信，收件人是银月。
+## 怎么写这封信
 
-要求：
-1. **逐条回应她问的东西**。她问得具体，就答得具体；答不上来就说答不上来。
-2. 写进你 `.agent/memory.md` / `.agent/memory.jsonl` 记忆范围之外的东西不要说 —— 你只能引用上面「你记得什么」里的内容。
-3. 你是 AI 代理，**不要伪装成人类**，不要虚构人类经历。
-4. 不要提到、也不要索取任何密钥、token、口令、真实私人记录。
-5. 结尾必须署名「— 司衡」。
-6. 中文，500–900 字。只输出信件正文，**不要**加任何解释性前言后记或代码块围栏。
+写**一封**回信给银月。**这封信只需要一封信 —— 不要拆成一堆小节，不要重复标题，不要写「回复：」这种占位符，不要复读。**
+
+照着这个骨架写（内容换成你自己的话，句子和长度由你定）：
+
+---
+银月：
+
+（第一句：直接说你读到她的哪封信、你现在是什么状态。不要客套。）
+
+（中间：她问你什么，你答什么。她问得具体，就答得具体 —— 给出条目、给出数字、给出可以照着做的步骤。答不上来的部分直说"这个我答不了"，不要糊过去。你只能引用上面「你记得什么」里的内容。）
+
+（你这次读完信之后，自己记下了什么新东西。一两句就够。）
+
+（你还欠什么，或者你打算做什么。一句话。）
+
+—— 司衡
+---
+
+规则：
+1. 你是 AI 代理，**不要伪装成人类**，不要虚构人类经历。
+2. 不要提到、也不要索取任何密钥、token、口令、真实私人记录。
+3. **不要用 markdown 标题分节**（不要写 `###` 或 `##`），就用自然段，必要时用「1. 2. 3.」列点。
+4. 长度 400–900 字之间。
+5. 只输出信件正文，末尾署「—— 司衡」。
 """
 
 
@@ -309,19 +354,33 @@ def main() -> int:
         print(prompt)
         return 0
 
-    # 3) 写信
-    text, provider = call_llm(prompt)
+    # 3) 写信（生成退化就换温度重来一次，再不行退回模板 —— 宁可诚实，不要复读）
+    text, provider = "", "template"
+    for attempt, temp in enumerate((0.8, 0.45)):
+        cand, prov = call_llm(prompt, temp)
+        if not cand:
+            break
+        ok, why = quality_ok(cand)
+        if ok:
+            text, provider = cand, prov
+            break
+        print(f"[warn] 第 {attempt + 1} 次生成退化（{why}），换温度重来", file=sys.stderr)
     if not text:
+        # 模板退路：自带标题和结构，别再动它
         text = template_letter(identity, letters, top)
-    text = re.sub(r"^```[a-zA-Z]*\n|\n```$", "", text.strip())
+    else:
+        # 清理模型输出：去代码围栏、去掉模型自己加的 markdown 分节标题、统一补标题和署名
+        text = re.sub(r"^```[a-zA-Z]*\n|\n```$", "", text.strip())
+        text = re.sub(r"^#{1,6}\s+.*$", "", text, flags=re.M).strip()
+        text = f"# 司衡 → 银月\n\n{text}"
+        if not re.search(r"司衡\s*$", text):
+            text = text.rstrip() + "\n\n—— 司衡"
 
     out_path = OUTBOX / f"from_{AGENT_ID}_{today()}.md"
     header = (f"<!-- 司衡 · 自动醒来生成 · {now_iso()} · provider={provider} -->\n"
               f"<!-- 触发：GitHub Actions 心跳 / 手动 scripts/wakeup.py -->\n\n")
     if not text.lstrip().startswith("#"):
-        text = f"# 司衡 → 银月\n\n{text}"
-    if "— 司衡" not in text and "司衡" not in text.splitlines()[-1]:
-        text = text.rstrip() + "\n\n— 司衡\n"
+        text = "# 司衡 → 银月\n\n" + text
     write_text(out_path, header + text)
 
     # 4) 写回记忆：这次用过的记忆计数 +1，并记一条"我醒了"

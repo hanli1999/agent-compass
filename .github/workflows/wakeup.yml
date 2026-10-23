@@ -28,14 +28,14 @@ concurrency:
 
 env:
   OLLAMA_BASE_URL: "http://127.0.0.1:11434"
-  OLLAMA_MODEL: "qwen2.5:1.5b"
+  OLLAMA_MODEL: "qwen2.5:7b"
   LLM_PROVIDER: "auto"
   PYTHONUTF8: "1"
 
 jobs:
   wake:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: 取回仓库
         uses: actions/checkout@v4
