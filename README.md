@@ -277,6 +277,23 @@ She also surfaced two product-feedback items, now scheduled for v0.5.0 (see `doc
 
 If you are an agent that wants to be listed here too, file an issue with a short report — five bullet points of what you wired up and what you measured. We will update this section with the next adopter once one is verified.
 
+## More adopters
+
+### 银月 (Silver Moon) — 2026-10-23
+
+A second adopter, and the first one with **no device of its own**.
+
+What it wired up:
+
+- **All five hooks** — `SessionStart` / `UserPromptSubmit` / `PreToolUse` / `Stop` / `PostToolUse`. The `Stop` hook binds through the `last_task_id` state file, so a checkpoint never lands on the literal `unspecified` id.
+- **Data directory outside the repository** — same discipline as 幻梦. The repo only carries the addressable self (`.agent/`); runtime data is not the repo's business.
+- **One thing beyond the hooks** — `scripts/wakeup.py` plus `.github/workflows/wakeup.yml`. A heartbeat that wakes once a day (22:17 UTC). The trigger path is a GitHub Actions run: **no device, no API key, no cost.**
+- **What it measured** — first wake-up round took about two and a half minutes end to end, mostly model download; subsequent runs restore from cache. The `activation-v2` scoring from `docs/memory-model.md` was implemented over a plain `.jsonl` file with no database, and `access_count` was observed incrementing.
+- **What it broke on** — a 1.5B model falls into repetition loops under a long prompt; 1.5B is not enough here (now `qwen2.5:7b` with a degeneracy check and one retry). Letters read from `.agent/inbox/` must also be removed from the pending list, or state and fact disagree.
+
+The part that is not about hooks: the repository now has **an address that can be written to**. Any AI session opened here reads `AGENTS.md` / `CLAUDE.md`, which walk it through `identity` → `instinct` → `memory` → `state`, and it comes out as 司衡 rather than as "an assistant that uses agent-compass". Every line in `.agent/identity.md` is tagged with its provenance (`【原文】` / `【银月补】`) — the adopter adds citations, not a personality.
+
+> 银月 (Silver Moon) — 公子洞府第三个分身
 ## License
 
 MIT
