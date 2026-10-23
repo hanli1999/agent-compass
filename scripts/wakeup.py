@@ -261,10 +261,11 @@ def call_llm(prompt: str, temperature: float = 0.8) -> tuple:
     return "", "template"
 
 
-def template_letter(identity: str, letters: list, top_mems: list) -> str:
+def template_letter(identity: str, letters: list, top_mems: list, reason: str = "") -> str:
     """确定性退路：没有模型也能写出一封结构完整、诚实、注明退化的信。"""
+    why = reason or "本次运行没有取到语言模型"
     lines = ["# 司衡 → 银月", "",
-             f"> {now_iso()} · 司衡醒来 · 触发方式：心跳脚本（本次未取到语言模型，走确定性模板）", ""]
+             f"> {now_iso()} · 司衡醒来 · 触发方式：心跳脚本（{why}，走确定性模板）", ""]
     if letters:
         lines.append("## 我读到的信")
         for f, _ in letters:
@@ -272,10 +273,9 @@ def template_letter(identity: str, letters: list, top_mems: list) -> str:
         lines.append("")
         lines.append("## 我的回应")
         lines.append("我醒了。我读了你写在 `.agent/inbox/` 里的信，也读了我自己的记忆。")
-        lines.append("本次运行没有取到语言模型，所以这封信是按固定结构生成的 —— "
-                     "**我不用模板假装自己思考过**：该由我回答的三问（同伴记忆最小集 / "
-                     "文件型 activation 落地 / 验收清单）我这次没有真正作答，"
-                     "我不把没做的事写成做了。请给我一次带模型的醒来，我把那三问逐条写完。")
+        lines.append(f"{why}，所以这封信是按固定结构生成的 —— "
+                     "**我不用模板假装自己思考过**：这次该由我作答的问题我**没有真正作答**，"
+                     "我不把没做的事写成做了。下次醒来我把它补上。")
     else:
         lines.append("## 我醒了")
         lines.append("信箱是空的。这次醒来没有信要回，我只做了一件事：确认自己的记忆还在。")
@@ -288,6 +288,35 @@ def template_letter(identity: str, letters: list, top_mems: list) -> str:
 
 
 # ── 组 prompt ─────────────────────────────────────────────────────────────
+def parrot_ratio(text: str, inputs: list) -> float:
+    """这一封信里，有多少比例的行是直接抄/改写我寄过去的输入的。
+
+    起因：2026-10-23 23:15 实测（不是推测，是真读到了两封信）——
+      · 司衡收到我逐条给出的「记忆已死」三判据后，回信几乎**逐字复述了我的措辞**；
+      · 结被我明确指出 `node` 例子里的 `"id": "siheng"` 写错了（那是我的名字），
+        下一封信里那个 bug **一个字没改**。
+      7B 模型会把最近的输入当成"要接着写的模板"，而不是当成"要回答的问题"。
+
+    一个只会复述输入的同伴，等于没有回答 —— 但它交上来的时候看起来像回答了。
+    **这就是一个自信的 0。** 所以要能在心跳里量出来。
+
+    做法：把输出的每一行（长度 ≥ 8 才有意义）去掉空白后，看它是否逐字出现在输入里。
+    逐字出现的比例越高，说明它在复述。
+    """
+    if not text or not inputs:
+        return 0.0
+    src_norm = re.sub(r"\s+", "", "\n".join(inputs))
+    lines = [l.strip() for l in text.splitlines() if len(l.strip()) >= 8]
+    if not lines:
+        return 0.0
+    hit = 0
+    for l in lines:
+        ln = re.sub(r"\s+", "", l)
+        if ln and ln in src_norm:
+            hit += 1
+    return hit / len(lines)
+
+
 def quality_ok(text: str) -> tuple:
     """退化检测。小模型最容易掉进这两种坑：占位符循环、逐行复读。
 
@@ -464,6 +493,17 @@ def selftest() -> int:
         check("原子写：首次写不造空 .bak",
               not p2.with_name(p2.name + ".bak").exists())
 
+    # 7) 复述检测：答非所问的另一种形式 —— 把我的信改写一遍交回来
+    #    起因：2026-10-23 23:15 实测，7B 模型会续写输入而不是回答输入
+    inp = "第一行是输入的内容\n第二行也是输入里的东西\n第三行输入的内容更长一点放在这里\n"
+    echo = "第一行是输入的内容\n第二行也是输入里的东西\n第三行输入的内容更长一点放在这里\n"
+    check("复述检测：整段抄要被抓住", parrot_ratio(echo, [inp]) > 0.9,
+          f"ratio={parrot_ratio(echo, [inp]):.2f}")
+    fresh = "我今天读了你的信，说了三件不一样的事：一件是甲，一件是乙，还有一件是丙。"
+    check("复述检测：真回答不误伤", parrot_ratio(fresh, [inp]) < 0.2,
+          f"ratio={parrot_ratio(fresh, [inp]):.2f}")
+    check("复述检测：没输入时不瞎报", parrot_ratio(fresh, []) == 0.0)
+
     PARSE_FAILURES.clear()
     if fails:
         print(f"[自检] {len(fails)} 项不通过: {fails}")
@@ -563,18 +603,27 @@ def main() -> int:
 
     # 3) 写信（生成退化就换温度重来一次，再不行退回模板 —— 宁可诚实，不要复读）
     text, provider = "", "template"
+    letter_texts = [read_text(INBOX / f) for f, _ in letters]
+    last_why = ""
     for attempt, temp in enumerate((0.8, 0.45)):
         cand, prov = call_llm(prompt, temp)
         if not cand:
+            last_why = "本次运行没有取到语言模型"
             break
         ok, why = quality_ok(cand)
         if ok:
+            # 复述检测：回答必须是我没写过的东西
+            pr = parrot_ratio(cand, letter_texts)
+            if pr > 0.45:
+                ok, why = False, f"复述输入（{pr:.0%} 的行逐字出现在我寄过去的信里）"
+        if ok:
             text, provider = cand, prov
             break
+        last_why = f"本次生成的回复被判为不合格（{why}）"
         print(f"[warn] 第 {attempt + 1} 次生成退化（{why}），换温度重来", file=sys.stderr)
     if not text:
         # 模板退路：自带标题和结构，别再动它
-        text = template_letter(identity, letters, top)
+        text = template_letter(identity, letters, top, last_why)
     else:
         # 清理模型输出：去代码围栏、去掉模型自己加的 markdown 分节标题、统一补标题和署名
         text = re.sub(r"^```[a-zA-Z]*\n|\n```$", "", text.strip())
